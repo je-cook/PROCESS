@@ -24,6 +24,10 @@ import math
 from matplotlib.path import Path
 import matplotlib.patches as patches
 import numpy as np
+from typing import Dict, Optional
+from operator import attrgetter
+from unittest.mock import patch
+from dataclasses import dataclass
 
 import process.io.mfile as mf
 from process.impurity_radiation import read_impurity_file
@@ -383,8 +387,12 @@ def poloidal_cross_section(axis, mfile_data, scan, demo_ranges):
     # ---
 
 
-def plot_cryostat(axis, mfile_data, scan):
+def plot_cryostat(axis, mfile_data, plot_data, scan):
     """Function to plot cryostat in poloidal cross-section"""
+    rdewex = plot_data.rdewex
+    ddwex = plot_data.ddwex
+    zdewex = plot_data.zdewex
+
     rect = patches.Rectangle(
         [rdewex, 0], ddwex, zdewex + ddwex, lw=0, facecolor=cryostat
     )
@@ -421,9 +429,7 @@ def color_key(axis):
     axis.add_patch(patches.Rectangle([0.2, 7.7], 1, 0.4, lw=0, facecolor=tfc))
 
     axis.text(-5, 7, "Th shield", ha="left", va="top", size="medium")
-    axis.add_patch(
-        patches.Rectangle([0.2, 6.7], 1, 0.4, lw=0, facecolor=thermal_shield)
-    )
+    axis.add_patch(patches.Rectangle([0.2, 6.7], 1, 0.4, lw=0, facecolor=thermal_shield))
 
     axis.text(-5, 6, "VV & shield", ha="left", va="top", size="medium")
     axis.add_patch(patches.Rectangle([0.2, 5.7], 1, 0.4, lw=0, facecolor=vessel))
@@ -451,13 +457,50 @@ def color_key(axis):
     axis.add_patch(patches.Rectangle([0.2, -0.3], 1, 0.4, lw=0, facecolor=cryostat))
 
 
-def toroidal_cross_section(axis, mfile_data, scan, demo_ranges):
+def toroidal_cross_section(axis, mfile_data, plot_data, scan, demo_ranges):
     """Function to plot toroidal cross-section
     Arguments:
       axis --> axis object to add plot to
       mfile_data --> MFILE data object
       scan --> scan number to use
     """
+    attrs = (
+        "rmajor",
+        "rminor",
+        "rdewex",
+        "ddwex",
+        "n_tf",
+        "nbshield",
+        "thkcas",
+        "tinstf",
+        "dr_tf_wp",
+        "wwp1",
+        "wwp2",
+        "casthi",
+        # Possibly might not exist
+        "tfthko",
+        "beamwd",
+        "rtanbeam",
+        "beamwd",
+    )
+    (
+        rmajor,
+        rminor,
+        rdewex,
+        ddwex,
+        n_tf,
+        nbshield,
+        thkcas,
+        tinstf,
+        dr_tf_wp,
+        wwp1,
+        wwp2,
+        casthi,
+        tfthko,
+        beamwd,
+        rtanbeam,
+        beamwd,
+    ) = attrgetter(attrs)(plot_data)
 
     # Check for Copper magnets
     if "i_tf_sup" in mfile_data.data.keys():
@@ -758,11 +801,17 @@ def ellips_fill(
     axis.add_patch(patch)
 
 
-def plot_nprofile(prof, demo_ranges):
+def plot_nprofile(prof, demo_ranges, plot_data):
     """Function to plot density profile
     Arguments:
       prof --> axis object to add plot to
     """
+    alphan = plot_data.alphan
+    ne0 = plot_data.ne0
+    neped = plot_data.neped
+    nesep = plot_data.nesep
+    rhopedn = plot_data.rhopedn
+    ipedestal = plot_data.ipedestal
 
     prof.set_xlabel("r/a")
     prof.set_ylabel(r"$n_{e}\cdot 10^{19}$ $[\mathrm{m}^{-3}]$")
@@ -828,11 +877,18 @@ def plot_plasmod_nprofile(prof, demo_ranges):
     # ---
 
 
-def plot_tprofile(prof, demo_ranges):
+def plot_tprofile(prof, demo_ranges, plot_data):
     """Function to plot temperature profile
     Arguments:
       prof --> axis object to add plot to
     """
+    alphat = plot_data.alphat
+    rhopedt = plot_data.rhopedt
+    tbeta = plot_data.tbeta
+    te0 = plot_data.te0
+    teped = plot_data.teped
+    tesep = plot_data.tesep
+    ipedestal = plot_data.ipedestal
 
     prof.set_xlabel("r/a")
     prof.set_ylabel("$T_{e}$ [keV]")
@@ -895,12 +951,14 @@ def plot_plasmod_tprofile(prof, demo_ranges):
     # ---
 
 
-def plot_qprofile(prof, demo_ranges):
+def plot_qprofile(prof, demo_ranges, plot_data):
     """Function to plot q profile, formula taken from Nevins bootstrap model.
 
     Arguments:
       prof --> axis object to add plot to
     """
+    q0 = plot_data.q0
+    q95 = plot_data.q95
 
     prof.set_xlabel("r/a")
     prof.set_ylabel("q(r)")
@@ -1002,13 +1060,22 @@ def read_imprad_data(skiprows, data_path):
     return impdata
 
 
-def synchrotron_rad():
+def synchrotron_rad(plot_data):
     """Function for Synchrotron radiation power calculation from Albajar, Nuclear Fusion 41 (2001) 665
       Fidone, Giruzzi, Granata, Nuclear Fusion 41 (2001) 1755
 
     Arguments:
     """
     # tbet is betaT in Albajar, not to be confused with plasma beta
+    vol = plot_data.vol
+    rmajor = plot_data.rmajor
+    rminor = plot_data.rminor
+    alphan = plot_data.alphan
+    alphat = plot_data.alphat
+    ne0 = plot_data.ne0
+    te0 = plot_data.te0
+    ssync = plot_data.ssync
+    bt = plot_data.bt
 
     tbet = 2.0
     # rpow is the(1-Rsyn) power dependence based on plasma shape
@@ -1040,7 +1107,7 @@ def synchrotron_rad():
     return psyncpv
 
 
-def plot_radprofile(prof, mfile_data, scan, impp, demo_ranges) -> float:
+def plot_radprofile(prof, mfile_data, plot_data, scan, impp, demo_ranges) -> float:
     """Function to plot radiation profile, formula taken from ???.
 
     Arguments:
@@ -1049,6 +1116,19 @@ def plot_radprofile(prof, mfile_data, scan, impp, demo_ranges) -> float:
       scan --> scan number to use
       impp --> impurity path
     """
+
+    alphan = plot_data.alphan
+    alphat = plot_data.alphat
+    ne0 = plot_data.ne0
+    neped = plot_data.neped
+    nesep = plot_data.nesep
+    rhopedn = plot_data.rhopedn
+    rhopedt = plot_data.rhopedt
+    tbeta = plot_data.tbeta
+    te0 = plot_data.te0
+    teped = plot_data.teped
+    tesep = plot_data.tesep
+    ipedestal = plot_data.ipedestal
 
     prof.set_xlabel("r/a")
     prof.set_ylabel(r"$P_{\mathrm{rad}}$ $[\mathrm{MW.m}^{-3}]$")
@@ -1218,7 +1298,7 @@ def plot_radprofile(prof, mfile_data, scan, impp, demo_ranges) -> float:
     # ---
 
 
-def plot_vacuum_vessel(axis, mfile_data, scan):
+def plot_vacuum_vessel(axis, mfile_data, plot_data, scan):
     """Function to plot vacuum vessel
 
     Arguments:
@@ -1226,6 +1306,11 @@ def plot_vacuum_vessel(axis, mfile_data, scan):
         mfile_data --> MFILE data object
         scan --> scan number to use
     """
+    cumulative_upper = plot_data.cumulative_upper
+    cumulative_lower = plot_data.cumulative_lower
+    upper = plot_data.upper
+    lower = plot_data.lower
+
     i_single_null = mfile_data.data["i_single_null"].get_scan(scan)
     triang = mfile_data.data["triang95"].get_scan(scan)
     temp_array_1 = ()
@@ -1285,7 +1370,7 @@ def plot_vacuum_vessel(axis, mfile_data, scan):
         axis.fill(rs, -zs, color=vessel)
 
 
-def plot_shield(axis, mfile_data, scan):
+def plot_shield(axis, mfile_data, plot_data, scan):
     """Function to plot shield
 
     Arguments:
@@ -1293,6 +1378,8 @@ def plot_shield(axis, mfile_data, scan):
         mfile_data --> MFILE data object
         scan --> scan number to use
     """
+    cumulative_upper = plot_data.cumulative_upper
+    cumulative_lower = plot_data.cumulative_lower
     i_single_null = mfile_data.data["i_single_null"].get_scan(scan)
     triang = mfile_data.data["triang95"].get_scan(scan)
     temp_array_1 = ()
@@ -1350,7 +1437,7 @@ def plot_shield(axis, mfile_data, scan):
         axis.fill(rs, -zs, color=shield)
 
 
-def plot_blanket(axis, mfile_data, scan):
+def plot_blanket(axis, mfile_data, plot_data, scan):
     """Function to plot blanket
 
     Arguments:
@@ -1359,6 +1446,12 @@ def plot_blanket(axis, mfile_data, scan):
       scan --> scan number to use
 
     """
+    cumulative_upper = plot_data.cumulative_upper
+    cumulative_lower = plot_data.cumulative_lower
+    triang = plot_data.triang
+    blnkoth = plot_data.blnkoth
+    blnkith = plot_data.blnkith
+
     point_array = ()
 
     # Single null: Draw top half from output
@@ -1420,7 +1513,7 @@ def plot_blanket(axis, mfile_data, scan):
         )
 
 
-def plot_firstwall(axis, mfile_data, scan):
+def plot_firstwall(axis, mfile_data, plot_data, scan):
     """Function to plot first wall
 
     Arguments:
@@ -1429,6 +1522,12 @@ def plot_firstwall(axis, mfile_data, scan):
       scan --> scan number to use
 
     """
+    cumulative_upper = plot_data.cumulative_upper
+    cumulative_lower = plot_data.cumulative_lower
+    triang = plot_data.triang
+    fwoth = plot_data.fwoth
+    fwith = plot_data.fwith
+
     blnktth = mfile_data.data["blnktth"].get_scan(scan)
     tfwvt = mfile_data.data["fwtth"].get_scan(scan)
     i_single_null = mfile_data.data["i_single_null"].get_scan(scan)
@@ -1513,7 +1612,7 @@ def angle_check(angle1, angle2):
     return angle1, angle2
 
 
-def plot_tf_coils(axis, mfile_data, scan):
+def plot_tf_coils(axis, mfile_data, plot_data, scan):
     """Function to plot TF coils
 
     Arguments:
@@ -1522,6 +1621,8 @@ def plot_tf_coils(axis, mfile_data, scan):
         scan --> scan number to use
 
     """
+    tfcth = plot_data.tfcth
+
     # Arc points
     # MDK Only 4 points now required for elliptical arcs
     x1 = mfile_data.data["xarc(1)"].get_scan(scan)
@@ -2000,9 +2101,7 @@ def plot_physics_info(axis, mfile_data, scan):
 
     dnz = mfile_data.data["dnz"].get_scan(scan) / mfile_data.data["dene"].get_scan(scan)
 
-    tepeak = mfile_data.data["te0"].get_scan(scan) / mfile_data.data["te"].get_scan(
-        scan
-    )
+    tepeak = mfile_data.data["te0"].get_scan(scan) / mfile_data.data["te"].get_scan(scan)
 
     nepeak = mfile_data.data["ne0"].get_scan(scan) / mfile_data.data["dene"].get_scan(
         scan
@@ -2114,9 +2213,9 @@ def plot_magnetics_info(axis, mfile_data, scan):
     else:
         tftype = "Resistive"
 
-    vssoft = mfile_data.data["vsres"].get_scan(scan) + mfile_data.data[
-        "vsind"
-    ].get_scan(scan)
+    vssoft = mfile_data.data["vsres"].get_scan(scan) + mfile_data.data["vsind"].get_scan(
+        scan
+    )
 
     sig_case = 1.0e-6 * mfile_data.data[
         "sig_tf_tresca_max({})".format(i_tf_bucking)
@@ -2442,6 +2541,7 @@ def main_plot(
     fig1,
     fig2,
     m_file_data,
+    plot_data,
     scan,
     plasmod=False,
     imp="../data/lz_non_corona_14_elements/",
@@ -2589,207 +2689,8 @@ def test(f):
     """
 
     try:
-        # read MFILE
-        m_file = mf.MFile(filename=f)
-        scan = -1
-
-        # Check for Copper magnets
-        if "i_tf_sup" in m_file.data.keys():
-            i_tf_sup = int(m_file.data["i_tf_sup"].get_scan(scan))
-        else:
-            i_tf_sup = int(1)
-
-        # Check integer turns
-        if "i_tf_turns_integer" in m_file.data.keys():
-            i_tf_turns_integer = int(m_file.data["i_tf_turns_integer"].get_scan(scan))
-        else:
-            i_tf_turns_integer = int(0)
-
-        global bore
-        bore = m_file.data["bore"].get_scan(scan)
-        global ohcth
-        ohcth = m_file.data["ohcth"].get_scan(scan)
-        global gapoh
-        gapoh = m_file.data["gapoh"].get_scan(scan)
-        global tfcth
-        tfcth = m_file.data["tfcth"].get_scan(scan)
-        global gapds
-        gapds = m_file.data["gapds"].get_scan(scan)
-        global d_vv_in
-        d_vv_in = m_file.data["d_vv_in"].get_scan(scan)
-        global shldith
-        shldith = m_file.data["shldith"].get_scan(scan)
-        global blnkith
-        blnkith = m_file.data["blnkith"].get_scan(scan)
-        global fwith
-        fwith = m_file.data["fwith"].get_scan(scan)
-        global scrapli
-        scrapli = m_file.data["scrapli"].get_scan(scan)
-        global rmajor
-        rmajor = m_file.data["rmajor"].get_scan(scan)
-        global rminor
-        rminor = m_file.data["rminor"].get_scan(scan)
-        global scraplo
-        scraplo = m_file.data["scraplo"].get_scan(scan)
-        global fwoth
-        fwoth = m_file.data["fwoth"].get_scan(scan)
-        global blnkoth
-        blnkoth = m_file.data["blnkoth"].get_scan(scan)
-        global shldoth
-        shldoth = m_file.data["shldoth"].get_scan(scan)
-        global d_vv_out
-        d_vv_out = m_file.data["d_vv_out"].get_scan(scan)
-        global gapsto
-        gapsto = m_file.data["gapsto"].get_scan(scan)
-        global tfthko
-        tfthko = m_file.data["tfthko"].get_scan(scan)
-        global rdewex
-        rdewex = m_file.data["rdewex"].get_scan(scan)
-        global ddwex
-        ddwex = m_file.data["ddwex"].get_scan(scan)
-        global zdewex
-        zdewex = m_file.data["zdewex"].get_scan(scan)
-        global n_tf
-        n_tf = m_file.data["n_tf"].get_scan(scan)
-
-        if i_tf_sup == 1:
-            global wwp1
-            wwp1 = m_file.data["wwp1"].get_scan(scan)
-            if i_tf_turns_integer == 0:
-                global wwp2
-                wwp2 = m_file.data["wwp2"].get_scan(scan)
-            global dr_tf_wp
-            dr_tf_wp = m_file.data["dr_tf_wp"].get_scan(scan)
-            global tinstf
-            tinstf = m_file.data["tinstf"].get_scan(scan)
-            global thkcas
-            thkcas = m_file.data["thkcas"].get_scan(scan)
-
-            # To be re-inergrated to resistives when in-plane stresses is integrated
-            global casthi
-            casthi = m_file.data["casthi"].get_scan(scan)
-
-        global nbshield
-        nbshield = m_file.data["nbshield"].get_scan(scan)
-        global rtanbeam
-        rtanbeam = m_file.data["rtanbeam"].get_scan(scan)
-        global rtanmax
-        rtanmax = m_file.data["rtanmax"].get_scan(scan)
-        global beamwd
-        beamwd = m_file.data["beamwd"].get_scan(scan)
-        # # Pedestal profile parameters
-        global ipedestal
-        ipedestal = m_file.data["ipedestal"].get_scan(scan)
-        global neped
-        neped = m_file.data["neped"].get_scan(scan)
-        global nesep
-        nesep = m_file.data["nesep"].get_scan(scan)
-        global rhopedn
-        rhopedn = m_file.data["rhopedn"].get_scan(scan)
-        global rhopedt
-        rhopedt = m_file.data["rhopedt"].get_scan(scan)
-        global tbeta
-        tbeta = m_file.data["tbeta"].get_scan(scan)
-        global teped
-        teped = m_file.data["teped"].get_scan(scan)
-        global tesep
-        tesep = m_file.data["tesep"].get_scan(scan)
-        global alphan
-        alphan = m_file.data["alphan"].get_scan(scan)
-        global alphat
-        alphat = m_file.data["alphat"].get_scan(scan)
-        global ne0
-        ne0 = m_file.data["ne0"].get_scan(scan)
-        global te0
-        te0 = m_file.data["te0"].get_scan(scan)
-        # # Plasma
-        global triang
-        triang = m_file.data["triang95"].get_scan(scan)
-        global alphaj
-        alphaj = m_file.data["alphaj"].get_scan(scan)
-        global q0
-        q0 = m_file.data["q0"].get_scan(scan)
-        global q95
-        q95 = m_file.data["q95"].get_scan(scan)
-
-        # Build the dictionaries of radial and vertical build values and cumulative
-        # values
-        global radial
-        radial = dict()
-        global cumulative_radial
-        cumulative_radial = dict()
-        subtotal = 0
-        for item in RADIAL_BUILD:
-            if item == "rminori" or item == "rminoro":
-                build = m_file.data["rminor"].get_scan(scan)
-            elif item == "vvblgapi" or item == "vvblgapo":
-                build = m_file.data["vvblgap"].get_scan(scan)
-            elif "d_vv_in" in item:
-                build = m_file.data["d_vv_in"].get_scan(scan)
-            elif "d_vv_out" in item:
-                build = m_file.data["d_vv_out"].get_scan(scan)
-            else:
-                build = m_file.data[item].get_scan(scan)
-
-        radial[item] = build
-        subtotal += build
-        cumulative_radial[item] = subtotal
-
-        global upper
-        upper = dict()
-        global cumulative_upper
-        cumulative_upper = dict()
-        subtotal = 0
-        for item in vertical_upper:
-            upper[item] = m_file.data[item].get_scan(scan)
-            subtotal += upper[item]
-            cumulative_upper[item] = subtotal
-
-        global lower
-        lower = dict()
-        global cumulative_lower
-        cumulative_lower = dict()
-        subtotal = 0
-        for item in vertical_lower:
-            lower[item] = m_file.data[item].get_scan(scan)
-            subtotal -= lower[item]
-            cumulative_lower[item] = subtotal
-
-        colour_dict = {}
-        colour_dict["ohcth"] = solenoid
-        colour_dict["tfcth"] = tfc
-        colour_dict["thshield_ib"] = thermal_shield
-        colour_dict["thshield_ob"] = thermal_shield
-        colour_dict["thshield_vb"] = thermal_shield
-        colour_dict["d_vv_in"] = vessel
-        colour_dict["d_vv_out"] = vessel
-        colour_dict["d_vv_top"] = vessel
-        colour_dict["d_vv_bot"] = vessel
-        colour_dict["shldith"] = shield
-        colour_dict["blnkith"] = blanket
-        colour_dict["rminor"] = plasma
-        colour_dict["fwith"] = firstwall
-        colour_dict["fwoth"] = firstwall
-
-        # create main plot
-        page1 = plt.figure(figsize=(12, 9), dpi=80)
-        page2 = plt.figure(figsize=(12, 9), dpi=80)
-
-        # run main_plot
-        main_plot(page1, page2, m_file, scan=scan)
-
-        # with bpdf.PdfPages(args.o) as pdf:
-        # with bpdf.PdfPages("ref.SUMMARY.pdf") as pdf:
-        #    pdf.savefig(page1)
-        #    pdf.savefig(page2)
-        # plt.show()
-
-        # # tidy up to avoid memory issues
-        # del page1
-        # del page2
-        plt.close(page1)
-        plt.close(page2)
-
+        with patch("bpdf.PdfPages"):
+            main([f"-n=-1 -f={f}"])
         return True
     except Exception:
         print("FTest failure for file : {}".format(f))
@@ -2840,8 +2741,169 @@ def parse_args(args):
     return parser.parse_args(args)
 
 
+@dataclass
+class PlotData:
+    bore: float
+    ohcth: float
+    gapoh: float
+    tfcth: float
+    gapds: float
+    ddwi: float
+    shldith: float
+    blnkith: float
+    fwith: float
+    scrapli: float
+    rmajor: float
+    rminor: float
+    scraplo: float
+    fwoth: float
+    blnkoth: float
+    shldoth: float
+    ddwi: float
+    gapsto: float
+    tfthko: float
+    rdewex: float
+    zdewex: float
+    ddwex: float
+
+    # Magnets related
+    n_tf: int
+    wwp1: Optional[float]
+    wwp2: Optional[float]
+    dr_tf_wp: Optional[float]
+    tinstf: Optional[float]
+    thkcas: Optional[float]
+    casthi: Optional[float]
+
+    nbshield: float
+    rtanbeam: float
+    rtanmax: float
+    beamwd: float
+
+    # Pedestal profile parameters
+    ipedestal: int
+    neped: int
+    nesep: int
+    rhopedn: float
+    rhopedt: float
+    tbeta: float
+    teped: float
+    tesep: float
+    alphan: float
+    alphat: float
+    ne0: float
+    te0: float
+
+    # Plasma
+    triang: float
+    alphaj: float
+    q0: float
+    q95: float
+    kallenbach_switch: int
+
+    # rad profile
+    ssync: float
+    bt: float
+    vol: float
+
+    upper: Dict
+    cumulative_upper: Dict
+
+    lower: Dict
+    cumulative_lower: Dict
+
+    @classmethod
+    def from_mfile(cls, m_file: mf.MFile, scan):
+        data = {}
+        fields = cls.__dataclass_fields__
+        # Magnet conditionals
+        fields.pop("wwp1", "wwp2", "dr_tf_wp", "tinstf", "thkcas", "casthi")
+        # Radial build keys
+        fields.pop("upper", "lower", "cumulative_upper", "cumulative_lower")
+        for var in fields:
+            data[var] = m_file.data["bore"].get_scan(scan)
+            if var == "n_tf":
+                cls.process_tf(m_file, scan, data)
+        (
+            data["upper"],
+            data["lower"],
+            data["cumulative_upper"],
+            data["cumulative_lower"],
+        ) = cls.create_radial_build(m_file, scan, data)
+        return cls(**data)
+
+    @staticmethod
+    def process_tf(m_file, scan, data):
+        # Check for Copper magnets
+        i_tf_sup = (
+            int(m_file.data["i_tf_sup"].get_scan(scan))
+            if "i_tf_sup" in m_file.data
+            else 1
+        )
+
+        # Check integer turns
+        i_tf_turns_integer = (
+            int(m_file.data["i_tf_turns_integer"].get_scan(scan))
+            if "i_tf_turns_integer" in m_file.data
+            else 0
+        )
+        sc_mag_keys = ("wwp1", "dr_tf_wp", "tinstf", "thkcas", "casthi")
+        if i_tf_sup == 1:  # If superconducting magnets
+            # casthi to be re-inergrated to resistives when in-plane stresses is integrated
+            for k in sc_mag_keys:
+                data[k] = m_file.data[k].get_scan(scan)
+            data["wwp2"] = (
+                m_file.data["wwp2"].get_scan(scan) if i_tf_turns_integer == 0 else None
+            )
+        else:
+            for k in sc_mag_keys:
+                data[k] = None
+            data["wwp2"] = None
+
+    @staticmethod
+    def create_radial_build(m_file, scan):
+        # Build the dictionaries of radial and vertical build values and cumulative values
+
+        # UNUSED
+        # radial = {}
+        # cumulative_radial = {}
+        # subtotal = 0
+        # for item in RADIAL_BUILD:
+        #     if item == "rminori" or item == "rminoro":
+        #         build = m_file.data["rminor"].get_scan(scan)
+        #     elif item == "vvblgapi" or item == "vvblgapo":
+        #         build = m_file.data["vvblgap"].get_scan(scan)
+        #     elif "d_vv_in" in item:
+        #         build = m_file.data["d_vv_in"].get_scan(scan)
+        #     elif "d_vv_out" in item:
+        #         build = m_file.data["d_vv_out"].get_scan(scan)
+        #     else:
+        #         build = m_file.data[item].get_scan(scan)
+
+        # radial[item] = build
+        # subtotal += build
+        # cumulative_radial[item] = subtotal
+
+        upper = {}
+        cumulative_upper = {}
+        subtotal = 0
+        for item in vertical_upper:
+            upper[item] = m_file.data[item].get_scan(scan)
+            subtotal += upper[item]
+            cumulative_upper[item] = subtotal
+
+        lower = {}
+        cumulative_lower = {}
+        subtotal = 0
+        for item in vertical_lower:
+            lower[item] = m_file.data[item].get_scan(scan)
+            subtotal -= lower[item]
+            cumulative_lower[item] = subtotal
+
+        return upper, lower, cumulative_upper, cumulative_lower
+
+
 def main(args=None):
-    # TODO The use of globals here isn't ideal, but is required to get main()
     # working with minimal changes. Should be converted to class structure
     args = parse_args(args)
 
@@ -2861,132 +2923,7 @@ def main(args=None):
     else:
         demo_ranges = False
 
-    # Check for Copper magnets
-    if "i_tf_sup" in m_file.data.keys():
-        i_tf_sup = int(m_file.data["i_tf_sup"].get_scan(scan))
-    else:
-        i_tf_sup = int(1)
-
-    # Check integer turns
-    if "i_tf_turns_integer" in m_file.data.keys():
-        i_tf_turns_integer = int(m_file.data["i_tf_turns_integer"].get_scan(scan))
-    else:
-        i_tf_turns_integer = int(0)
-
-    global bore
-    global ohcth
-    global gapoh
-    global tfcth
-    global gapds
-    global ddwi
-    global shldith
-    global blnkith
-    global fwith
-    global scrapli
-    global rmajor
-    global rminor
-    global scraplo
-    global fwoth
-    global blnkoth
-    global shldoth
-    global ddwi
-    global gapsto
-    global tfthko
-    global rdewex
-    global zdewex
-    global ddwex
-
-    bore = m_file.data["bore"].get_scan(scan)
-    ohcth = m_file.data["ohcth"].get_scan(scan)
-    gapoh = m_file.data["gapoh"].get_scan(scan)
-    tfcth = m_file.data["tfcth"].get_scan(scan)
-    gapds = m_file.data["gapds"].get_scan(scan)
-    shldith = m_file.data["shldith"].get_scan(scan)
-    blnkith = m_file.data["blnkith"].get_scan(scan)
-    fwith = m_file.data["fwith"].get_scan(scan)
-    scrapli = m_file.data["scrapli"].get_scan(scan)
-    rmajor = m_file.data["rmajor"].get_scan(scan)
-    rminor = m_file.data["rminor"].get_scan(scan)
-    scraplo = m_file.data["scraplo"].get_scan(scan)
-    fwoth = m_file.data["fwoth"].get_scan(scan)
-    blnkoth = m_file.data["blnkoth"].get_scan(scan)
-    shldoth = m_file.data["shldoth"].get_scan(scan)
-    gapsto = m_file.data["gapsto"].get_scan(scan)
-    tfthko = m_file.data["tfthko"].get_scan(scan)
-    rdewex = m_file.data["rdewex"].get_scan(scan)
-    zdewex = m_file.data["zdewex"].get_scan(scan)
-    ddwex = m_file.data["ddwex"].get_scan(scan)
-
-    # Magnets related
-    global n_tf
-    global wwp1
-    global wwp2
-    global dr_tf_wp
-    global tinstf
-    global thkcas
-    global casthi
-
-    n_tf = m_file.data["n_tf"].get_scan(scan)
-    if i_tf_sup == 1:  # If superconducting magnets
-        wwp1 = m_file.data["wwp1"].get_scan(scan)
-        if i_tf_turns_integer == 0:
-            wwp2 = m_file.data["wwp2"].get_scan(scan)
-        dr_tf_wp = m_file.data["dr_tf_wp"].get_scan(scan)
-        tinstf = m_file.data["tinstf"].get_scan(scan)
-        thkcas = m_file.data["thkcas"].get_scan(scan)
-
-        # To be re-inergrated to resistives when in-plane stresses is integrated
-        casthi = m_file.data["casthi"].get_scan(scan)
-
-    global nbshield
-    global rtanbeam
-    global rtanmax
-    global beamwd
-
-    nbshield = m_file.data["nbshield"].get_scan(scan)
-    rtanbeam = m_file.data["rtanbeam"].get_scan(scan)
-    rtanmax = m_file.data["rtanmax"].get_scan(scan)
-    beamwd = m_file.data["beamwd"].get_scan(scan)
-
-    # Pedestal profile parameters
-    global ipedestal
-    global neped
-    global nesep
-    global rhopedn
-    global rhopedt
-    global tbeta
-    global teped
-    global tesep
-    global alphan
-    global alphat
-    global ne0
-    global te0
-
-    ipedestal = m_file.data["ipedestal"].get_scan(scan)
-    neped = m_file.data["neped"].get_scan(scan)
-    nesep = m_file.data["nesep"].get_scan(scan)
-    rhopedn = m_file.data["rhopedn"].get_scan(scan)
-    rhopedt = m_file.data["rhopedt"].get_scan(scan)
-    tbeta = m_file.data["tbeta"].get_scan(scan)
-    teped = m_file.data["teped"].get_scan(scan)
-    tesep = m_file.data["tesep"].get_scan(scan)
-    alphan = m_file.data["alphan"].get_scan(scan)
-    alphat = m_file.data["alphat"].get_scan(scan)
-    ne0 = m_file.data["ne0"].get_scan(scan)
-    te0 = m_file.data["te0"].get_scan(scan)
-
-    # Plasma
-    global triang
-    global alphaj
-    global q0
-    global q95
-    global kallenbach_switch
-
-    triang = m_file.data["triang95"].get_scan(scan)
-    alphaj = m_file.data["alphaj"].get_scan(scan)
-    q0 = m_file.data["q0"].get_scan(scan)
-    q95 = m_file.data["q95"].get_scan(scan)
-    kallenbach_switch = m_file.data["kallenbach_switch"].get_scan(scan)
+    plot_data = PlotData.from_mfile(m_file, scan)
 
     # Radial position  -- 0
     # Electron density -- 1
@@ -3006,15 +2943,6 @@ def main(args=None):
     # Ion dens(10^19 m^-3) -- 15
     # Poloidal flux (Wb) -- 16
     if args.m != "":
-        global pmod_r
-        global pmod_ne
-        global pmod_te
-        global pmod_ti
-        global pmod_nd
-        global pmod_nt
-        global pmod_q
-        global pmod_ni
-
         plasmod_profiles = np.loadtxt(args.m).transpose()
         pmod_r = plasmod_profiles[0]
         pmod_ne = plasmod_profiles[1]
@@ -3027,57 +2955,10 @@ def main(args=None):
         pmod_switch = True
         print("plasmod!")
     else:
-        if ipedestal == 2 or ipedestal == 3:
+        if plot_data.ipedestal == 2 or plot_data.ipedestal == 3:
             print("\n ERROR: Specify the PLASMOD profile file using -m \n")
             exit()
         pmod_switch = False
-    # rad profile
-    global ssync
-    global bt
-    global vol
-    ssync = m_file.data["ssync"].get_scan(scan)
-    bt = m_file.data["bt"].get_scan(scan)
-    vol = m_file.data["vol"].get_scan(scan)
-
-    # Build the dictionaries of radial and vertical build values and cumulative values
-    radial = {}
-    cumulative_radial = {}
-    subtotal = 0
-    for item in RADIAL_BUILD:
-        if item == "rminori" or item == "rminoro":
-            build = m_file.data["rminor"].get_scan(scan)
-        elif item == "vvblgapi" or item == "vvblgapo":
-            build = m_file.data["vvblgap"].get_scan(scan)
-        elif "d_vv_in" in item:
-            build = m_file.data["d_vv_in"].get_scan(scan)
-        elif "d_vv_out" in item:
-            build = m_file.data["d_vv_out"].get_scan(scan)
-        else:
-            build = m_file.data[item].get_scan(scan)
-
-    radial[item] = build
-    subtotal += build
-    cumulative_radial[item] = subtotal
-
-    global upper
-    global cumulative_upper
-    upper = {}
-    cumulative_upper = {}
-    subtotal = 0
-    for item in vertical_upper:
-        upper[item] = m_file.data[item].get_scan(scan)
-        subtotal += upper[item]
-        cumulative_upper[item] = subtotal
-
-    global lower
-    global cumulative_lower
-    lower = {}
-    cumulative_lower = {}
-    subtotal = 0
-    for item in vertical_lower:
-        lower[item] = m_file.data[item].get_scan(scan)
-        subtotal -= lower[item]
-        cumulative_lower[item] = subtotal
 
     colour_dict = {}
     colour_dict["ohcth"] = solenoid
@@ -3105,7 +2986,13 @@ def main(args=None):
 
     # run main_plot
     main_plot(
-        page1, page2, m_file, scan=scan, plasmod=pmod_switch, demo_ranges=demo_ranges
+        page1,
+        page2,
+        plot_data,
+        m_file,
+        scan=scan,
+        plasmod=pmod_switch,
+        demo_ranges=demo_ranges,
     )
 
     # with bpdf.PdfPages(args.o) as pdf:
