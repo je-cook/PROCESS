@@ -1,46 +1,41 @@
 #!/usr/bin/env python
 """
 
-  PROCESS plot_proc using process_io_lib functions and MFILE.DAT
+PROCESS plot_proc using process_io_lib functions and MFILE.DAT
 
-  James Morris
-  13/04/2014
-  CCFE
-  Revised by Michael Kovari, 7/1/2016
+James Morris
+13/04/2014
+CCFE
+Revised by Michael Kovari, 7/1/2016
 
-  24/11/2021: Global dictionary variables moved within the functions
-              to avoid cyclic dependencies. This is because the dicts
-              generation script imports, and inspects, process.
+24/11/2021: Global dictionary variables moved within the functions
+to avoid cyclic dependencies. This is because the dicts
+generation script imports, and inspects, process.
 
 """
-
-import os
-import sys
 import argparse
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.backends.backend_pdf as bpdf
-import math
-from matplotlib.path import Path
-import matplotlib.patches as patches
-import numpy as np
-from typing import Dict, Optional
-from operator import attrgetter
-from unittest.mock import patch
+import os
 from dataclasses import dataclass
+from enum import Enum, auto
+from importlib import resources
+from operator import attrgetter
+from typing import ClassVar, Dict, Literal, Optional, Tuple, Union
+from unittest.mock import patch
+
+import matplotlib as mpl
+import matplotlib.backends.backend_pdf as bpdf
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import patches
+from matplotlib.path import Path
 
 import process.io.mfile as mf
 from process.impurity_radiation import read_impurity_file
 from process.io.python_fortran_dicts import get_dicts
 
 if os.name == "posix" and "DISPLAY" not in os.environ:
-    matplotlib.use("Agg")
-matplotlib.rcParams["figure.max_open_warning"] = 40
-
-if sys.version_info >= (3, 7):
-    from importlib import resources
-else:
-    import importlib_resources as resources
+    mpl.use("Agg")
+mpl.rcParams["figure.max_open_warning"] = 40
 
 
 solenoid = "pink"
@@ -119,7 +114,221 @@ ANIMATION_INFO = [
     ("aspect", "Aspect ratio", ""),
 ]
 
-rtangle = np.pi / 2
+RTANGLE = np.pi / 2
+
+
+@dataclass
+class PlotData:
+    bore: float
+    ohcth: float
+    gapoh: float
+    tfcth: float
+    gapds: float
+    ddwi: float
+    shldith: float
+    blnkith: float
+    fwith: float
+    scrapli: float
+    rmajor: float
+    rminor: float
+    scraplo: float
+    fwoth: float
+    blnkoth: float
+    shldoth: float
+    gapsto: float
+    tfthko: float
+    rdewex: float
+    zdewex: float
+    ddwex: float
+    vvblgap: float
+    d_vv_in: float
+    d_vv_out: float
+    fwtth: float
+
+    # Magnets related
+    n_tf: int
+    wwp1: Optional[float]
+    wwp2: Optional[float]
+    dr_tf_wp: Optional[float]
+    tinstf: Optional[float]
+    thkcas: Optional[float]
+    casthi: Optional[float]
+
+    nbshield: float
+    rtanbeam: float
+    rtanmax: float
+    beamwd: float
+
+    # Pedestal profile parameters
+    ipedestal: int
+    neped: int
+    nesep: int
+    rhopedn: float
+    rhopedt: float
+    tbeta: float
+    teped: float
+    tesep: float
+    alphan: float
+    alphat: float
+    ne0: float
+    te0: float
+
+    # Plasma
+    triang: float
+    triang95: float
+    kappa95: float
+    alphaj: float
+    q0: float
+    q95: float
+    kallenbach_switch: int
+
+    # rad profile
+    ssync: float
+    bt: float
+    vol: float
+
+    # power info
+    pgrossmw: float
+    pthermmw: float
+    htpmw: float
+    pnetelmw: float
+    powfmw: float
+    crypmw: float
+
+    # flags
+    i_single_null: int
+
+    upper: Dict
+    cumulative_upper: Dict
+
+    lower: Dict
+    cumulative_lower: Dict
+
+    # Magnet conditionals
+    mag_cond: ClassVar[tuple[str]] = (
+        "wwp1",
+        "wwp2",
+        "dr_tf_wp",
+        "tinstf",
+        "thkcas",
+        "casthi",
+    )
+    # Radial build keys
+    rad_cond: ClassVar[tuple[str]] = (
+        "upper",
+        "lower",
+        "cumulative_upper",
+        "cumulative_lower",
+    )
+
+    @classmethod
+    def from_mfile(cls, m_file: mf.MFile, scan):
+        data = {}
+        fields = cls.__dataclass_fields__.copy()
+        for cond in (cls.mag_cond, cls.rad_cond):
+            for v in cond:
+                fields.pop(v, None)
+
+        for var in fields:
+            data[var] = m_file.data["bore"].get_scan(scan)
+            if var == "n_tf":
+                cls.process_tf(m_file, scan, data)
+        (
+            data["upper"],
+            data["lower"],
+            data["cumulative_upper"],
+            data["cumulative_lower"],
+        ) = cls.create_radial_build(m_file, scan)
+        return cls(**data)
+
+    @classmethod
+    def process_tf(cls, m_file, scan, data):
+        # Check for Copper magnets
+        i_tf_sup = (
+            int(m_file.data["i_tf_sup"].get_scan(scan))
+            if "i_tf_sup" in m_file.data
+            else 1
+        )
+
+        # Check integer turns
+        i_tf_turns_integer = (
+            int(m_file.data["i_tf_turns_integer"].get_scan(scan))
+            if "i_tf_turns_integer" in m_file.data
+            else 0
+        )
+        if i_tf_sup == 1:  # If superconducting magnets
+            # casthi to be re-inergrated to resistives when in-plane stresses is integrated
+            for k in cls.mag_cond:
+                if k == "wwp2":
+                    data[k] = (
+                        m_file.data[k].get_scan(scan)
+                        if i_tf_turns_integer == 0
+                        else None
+                    )
+                data[k] = m_file.data[k].get_scan(scan)
+
+        else:
+            for k in cls.mag_cond:
+                data[k] = None
+
+    @staticmethod
+    def create_radial_build(m_file, scan):
+        # Build the dictionaries of radial and vertical build values and cumulative values
+
+        # UNUSED
+        # radial = {}
+        # cumulative_radial = {}
+        # subtotal = 0
+        # for item in RADIAL_BUILD:
+        #     if item == "rminori" or item == "rminoro":
+        #         build = m_file.data["rminor"].get_scan(scan)
+        #     elif item == "vvblgapi" or item == "vvblgapo":
+        #         build = m_file.data["vvblgap"].get_scan(scan)
+        #     elif "d_vv_in" in item:
+        #         build = m_file.data["d_vv_in"].get_scan(scan)
+        #     elif "d_vv_out" in item:
+        #         build = m_file.data["d_vv_out"].get_scan(scan)
+        #     else:
+        #         build = m_file.data[item].get_scan(scan)
+
+        # radial[item] = build
+        # subtotal += build
+        # cumulative_radial[item] = subtotal
+
+        upper = {}
+        cumulative_upper = {}
+        subtotal = 0
+        for item in vertical_upper:
+            upper[item] = m_file.data[item].get_scan(scan)
+            subtotal += upper[item]
+            cumulative_upper[item] = subtotal
+
+        lower = {}
+        cumulative_lower = {}
+        subtotal = 0
+        for item in vertical_lower:
+            lower[item] = m_file.data[item].get_scan(scan)
+            subtotal -= lower[item]
+            cumulative_lower[item] = subtotal
+
+        return upper, lower, cumulative_upper, cumulative_lower
+
+    def power_info(self):
+        return {
+            n: getattr(self, n)
+            for n in (
+                "pgrossmw",
+                "pthermmw",
+                "htpmw",
+                "pnetelmw",
+                "powfmw",
+                "crypmw",
+                "ipedestal",
+            )
+        }
+
+    def info(self):
+        pass
 
 
 def plotdh(axis, r0, a, delta, kap):
@@ -132,7 +341,8 @@ def plotdh(axis, r0, a, delta, kap):
         delta --> triangularity
         kap --> elongation
 
-    Returns:
+    Returns
+    -------
         rs --> radial coordinates of D-section
         zs --> vertical coordinates of D-section
     """
@@ -198,7 +408,7 @@ def plotdhgap(axis, inpt, outpt, inthk, outthk, toppt, topthk, delta, col):
     )
 
 
-def plot_plasma(axis, mfile_data, scan):
+def plot_plasma(axis, plot_data):
     """Plots the plasma boundary arcs.
 
     Arguments:
@@ -207,12 +417,11 @@ def plot_plasma(axis, mfile_data, scan):
         scan --> scan number to use
 
     """
-
-    r0 = mfile_data.data["rmajor"].get_scan(scan)
-    a = mfile_data.data["rminor"].get_scan(scan)
-    delta = 1.5 * mfile_data.data["triang95"].get_scan(scan)
-    kappa = (1.1 * mfile_data.data["kappa95"].get_scan(scan)) + 0.04
-    i_single_null = mfile_data.data["i_single_null"].get_scan(scan)
+    r0 = plot_data.rmajor
+    a = plot_data.rminor
+    delta = 1.5 * plot_data.triang95
+    kappa = (1.1 * plot_data.kappa95) + 0.04
+    i_single_null = plot_data.i_single_null
 
     x1 = (2.0 * r0 * (1.0 + delta) - a * (delta**2 + kappa**2 - 1.0)) / (
         2.0 * (1.0 + delta)
@@ -220,10 +429,10 @@ def plot_plasma(axis, mfile_data, scan):
     x2 = (2.0 * r0 * (delta - 1.0) - a * (delta**2 + kappa**2 - 1.0)) / (
         2.0 * (delta - 1.0)
     )
-    r1 = 0.5 * math.sqrt(
+    r1 = 0.5 * np.sqrt(
         (a**2 * ((delta + 1.0) ** 2 + kappa**2) ** 2) / ((delta + 1.0) ** 2)
     )
-    r2 = 0.5 * math.sqrt(
+    r2 = 0.5 * np.sqrt(
         (a**2 * ((delta - 1.0) ** 2 + kappa**2) ** 2) / ((delta - 1.0) ** 2)
     )
     theta1 = np.arcsin((kappa * a) / r1)
@@ -262,7 +471,7 @@ def plot_plasma(axis, mfile_data, scan):
     axis.fill_betweenx(ys1, xs1, xs2, where=(xs2 > xs1), color="none")
 
 
-def plot_centre_cross(axis, mfile_data, scan):
+def plot_centre_cross(axis, rmajor):
     """Function to plot centre cross on plot
 
     Arguments:
@@ -270,7 +479,6 @@ def plot_centre_cross(axis, mfile_data, scan):
         mfile_data --> MFILE data object
         scan --> scan number to use
     """
-    rmajor = mfile_data.data["rmajor"].get_scan(scan)
     axis.plot(
         [rmajor - 0.25, rmajor + 0.25, rmajor, rmajor, rmajor],
         [0, 0, 0, 0.25, -0.25],
@@ -278,7 +486,9 @@ def plot_centre_cross(axis, mfile_data, scan):
     )
 
 
-def cumulative_radial_build(section, mfile_data, scan):
+def cumulative_radial_build(
+    section, mfile_data, plot_data, scan, *, with_previous=False, verbose=True
+) -> Union[float, Tuple[float, float]]:
     """Function for calculating the cumulative radial build up to and
     including the given section.
 
@@ -287,68 +497,41 @@ def cumulative_radial_build(section, mfile_data, scan):
         mfile_data --> MFILE data object
         scan --> scan number to use
 
-    Returns:
-        cumulative_build --> cumulative radial build up to section given
-
-    """
-    complete = False
-    cumulative_build = 0
-    for item in RADIAL_BUILD:
-        if item == "rminori" or item == "rminoro":
-            cumulative_build += mfile_data.data["rminor"].get_scan(scan)
-        elif item == "vvblgapi" or item == "vvblgapo":
-            cumulative_build += mfile_data.data["vvblgap"].get_scan(scan)
-        elif "d_vv_in" in item:
-            cumulative_build += mfile_data.data["d_vv_in"].get_scan(scan)
-        elif "d_vv_out" in item:
-            cumulative_build += mfile_data.data["d_vv_out"].get_scan(scan)
-        else:
-            cumulative_build += mfile_data.data[item].get_scan(scan)
-        if item == section:
-            complete = True
-            break
-
-    if complete is False:
-        print("radial build parameter ", section, " not found")
-    return cumulative_build
-
-
-def cumulative_radial_build2(section, mfile_data, scan):
-    """Function for calculating the cumulative radial build up to and
-    including the given section.
-
-    Arguments:
-        section --> section of the radial build to go up to
-        mfile_data --> MFILE data object
-        scan --> scan number to use
-
-    Returns:
+    Returns
+    -------
         cumulative_build --> cumulative radial build up to and including
                              section given
         previous         --> cumulative radial build up to section given
 
     """
+    complete = False
     cumulative_build = 0
     build = 0
     for item in RADIAL_BUILD:
         if item == "rminori" or item == "rminoro":
-            build = mfile_data.data["rminor"].get_scan(scan)
+            build = plot_data.rminor
         elif item == "vvblgapi" or item == "vvblgapo":
-            build = mfile_data.data["vvblgap"].get_scan(scan)
+            build = plot_data.vvblgap
         elif "d_vv_in" in item:
-            build = mfile_data.data["d_vv_in"].get_scan(scan)
+            build = plot_data.d_vv_in
         elif "d_vv_out" in item:
-            build = mfile_data.data["d_vv_out"].get_scan(scan)
+            build = plot_data.d_vv_out
         else:
             build = mfile_data.data[item].get_scan(scan)
         cumulative_build += build
         if item == section:
+            complete = True
             break
-    previous = cumulative_build - build
-    return (cumulative_build, previous)
+
+    if not complete and verbose:
+        print("radial build parameter ", section, " not found")
+    if with_previous:
+        return cumulative_build, cumulative_build - build
+    else:
+        return cumulative_build
 
 
-def poloidal_cross_section(axis, mfile_data, scan, demo_ranges):
+def poloidal_cross_section(axis, mfile_data, plot_data, scan, demo_ranges):
     """Function to plot poloidal cross-section
 
     Arguments:
@@ -357,34 +540,30 @@ def poloidal_cross_section(axis, mfile_data, scan, demo_ranges):
       scan --> scan number to use
 
     """
-
     axis.set_xlabel("R / m")
     axis.set_ylabel("Z / m")
     axis.set_title("Poloidal cross-section")
 
-    plot_vacuum_vessel(axis, mfile_data, scan)
-    plot_shield(axis, mfile_data, scan)
-    plot_blanket(axis, mfile_data, scan)
-    plot_firstwall(axis, mfile_data, scan)
+    plot_vacuum_vessel(axis, mfile_data, plot_data, scan)
+    plot_shield(axis, mfile_data, plot_data, scan)
+    plot_blanket(axis, mfile_data, plot_data, scan)
+    plot_firstwall(axis, mfile_data, plot_data, scan)
 
-    plot_plasma(axis, mfile_data, scan)
-    plot_centre_cross(axis, mfile_data, scan)
-    plot_cryostat(axis, mfile_data, scan)
+    plot_plasma(axis, plot_data)
+    plot_centre_cross(axis, plot_data.rmajor)
+    plot_cryostat(axis, mfile_data, plot_data, scan)
 
-    plot_tf_coils(axis, mfile_data, scan)
+    plot_tf_coils(axis, mfile_data, plot_data, scan)
     plot_pf_coils(axis, mfile_data, scan)
 
     # Ranges
-    # ---
-    # DEMO : Fixed ranges for comparison
     if demo_ranges:
+        # DEMO : Fixed ranges for comparison
         axis.set_ylim([-15, 15])
         axis.set_xlim([0, 20])
-
-    # Adapatative ranges
     else:
+        # Adapatative ranges
         axis.set_xlim([0, axis.get_xlim()[1]])
-    # ---
 
 
 def plot_cryostat(axis, mfile_data, plot_data, scan):
@@ -393,19 +572,17 @@ def plot_cryostat(axis, mfile_data, plot_data, scan):
     ddwex = plot_data.ddwex
     zdewex = plot_data.zdewex
 
-    rect = patches.Rectangle(
-        [rdewex, 0], ddwex, zdewex + ddwex, lw=0, facecolor=cryostat
-    )
-    axis.add_patch(rect)
-    rect = patches.Rectangle(
-        [rdewex, 0], ddwex, -(zdewex + ddwex), lw=0, facecolor=cryostat
-    )
-    axis.add_patch(rect)
-
-    rect = patches.Rectangle([0, zdewex], rdewex, ddwex, lw=0, facecolor=cryostat)
-    axis.add_patch(rect)
-    rect = patches.Rectangle([0, -zdewex], rdewex, -ddwex, lw=0, facecolor=cryostat)
-    axis.add_patch(rect)
+    for i in (1, -1):
+        axis.add_patch(
+            patches.Rectangle(
+                [rdewex, 0], ddwex, i * (zdewex + ddwex), lw=0, facecolor=cryostat
+            )
+        )
+        axis.add_patch(
+            patches.Rectangle(
+                [0, i * zdewex], rdewex, i * ddwex, lw=0, facecolor=cryostat
+            )
+        )
 
 
 def color_key(axis):
@@ -418,46 +595,35 @@ def color_key(axis):
     axis.set_axis_off()
     axis.set_autoscaley_on(False)
     axis.set_autoscalex_on(False)
+    data = {
+        "CS coil": (10, 9.7, solenoid),
+        "CS comp": (9, 8.7, cscompression),
+        "TF coil": (8, 7.7, tfc),
+        "Th shield": (7, 6.7, thermal_shield),
+        "VV & shield": (6, 5.7, vessel),
+        "Blanket": (5, 4.7, blanket),
+        "First wall": (4, 3.7, firstwall),
+        "Plasma": (3, 2.7, plasma),
+        "PF coils": (2, 1.7, "none"),
+        "NB duct shield": (1, 0.7, nbshield_colour),
+        "cryostat": (0.1, -0.3, cryostat),
+    }
+    for label, (z, rect_h, colour) in data.items():
+        axis.text(-5, z, label, ha="left", va="top", size="medium")
+        if colour == "none":
+            axis.add_patch(
+                patches.Rectangle(
+                    [0.2, rect_h], 1, 0.4, lw=1, facecolor=colour, edgecolor="black"
+                )
+            )
 
-    axis.text(-5, 10, "CS coil", ha="left", va="top", size="medium")
-    axis.add_patch(patches.Rectangle([0.2, 9.7], 1, 0.4, lw=0, facecolor=solenoid))
-
-    axis.text(-5, 9, "CS comp", ha="left", va="top", size="medium")
-    axis.add_patch(patches.Rectangle([0.2, 8.7], 1, 0.4, lw=0, facecolor=cscompression))
-
-    axis.text(-5, 8, "TF coil", ha="left", va="top", size="medium")
-    axis.add_patch(patches.Rectangle([0.2, 7.7], 1, 0.4, lw=0, facecolor=tfc))
-
-    axis.text(-5, 7, "Th shield", ha="left", va="top", size="medium")
-    axis.add_patch(patches.Rectangle([0.2, 6.7], 1, 0.4, lw=0, facecolor=thermal_shield))
-
-    axis.text(-5, 6, "VV & shield", ha="left", va="top", size="medium")
-    axis.add_patch(patches.Rectangle([0.2, 5.7], 1, 0.4, lw=0, facecolor=vessel))
-
-    axis.text(-5, 5, "Blanket", ha="left", va="top", size="medium")
-    axis.add_patch(patches.Rectangle([0.2, 4.7], 1, 0.4, lw=0, facecolor=blanket))
-
-    axis.text(-5, 4, "First wall", ha="left", va="top", size="medium")
-    axis.add_patch(patches.Rectangle([0.2, 3.7], 1, 0.4, lw=0, facecolor=firstwall))
-
-    axis.text(-5, 3, "Plasma", ha="left", va="top", size="medium")
-    axis.add_patch(patches.Rectangle([0.2, 2.7], 1, 0.4, lw=0, facecolor=plasma))
-
-    axis.text(-5, 2, "PF coils", ha="left", va="top", size="medium")
-    axis.add_patch(
-        patches.Rectangle([0.2, 1.7], 1, 0.4, lw=1, facecolor="none", edgecolor="black")
-    )
-
-    axis.text(-5, 1, "NB duct shield", ha="left", va="top", size="medium")
-    axis.add_patch(
-        patches.Rectangle([0.2, 0.7], 1, 0.4, lw=0, facecolor=nbshield_colour)
-    )
-
-    axis.text(-5, 0.1, "cryostat", ha="left", va="top", size="medium")
-    axis.add_patch(patches.Rectangle([0.2, -0.3], 1, 0.4, lw=0, facecolor=cryostat))
+        else:
+            axis.add_patch(
+                patches.Rectangle([0.2, rect_h], 1, 0.4, lw=0, facecolor=colour)
+            )
 
 
-def toroidal_cross_section(axis, mfile_data, plot_data, scan, demo_ranges):
+def toroidal_cross_section(axis, mfile_data, plot_data, colour_dict, scan, demo_ranges):
     """Function to plot toroidal cross-section
     Arguments:
       axis --> axis object to add plot to
@@ -503,15 +669,17 @@ def toroidal_cross_section(axis, mfile_data, plot_data, scan, demo_ranges):
     ) = attrgetter(attrs)(plot_data)
 
     # Check for Copper magnets
-    if "i_tf_sup" in mfile_data.data.keys():
-        i_tf_sup = int(mfile_data.data["i_tf_sup"].get_scan(scan))
-    else:
-        i_tf_sup = int(1)
+    i_tf_sup = (
+        int(mfile_data.data["i_tf_sup"].get_scan(scan))
+        if "i_tf_sup" in mfile_data.data
+        else 1
+    )
 
-    if "i_tf_turns_integer" in mfile_data.data.keys():
-        i_tf_turns_integer = int(mfile_data.data["i_tf_turns_integer"].get_scan(scan))
-    else:
-        i_tf_turns_integer = int(0)
+    i_tf_turns_integer = (
+        int(mfile_data.data["i_tf_turns_integer"].get_scan(scan))
+        if "i_tf_turns_integer" in mfile_data.data
+        else 0
+    )
 
     axis.set_xlabel("x / m")
     axis.set_ylabel("y / m")
@@ -519,48 +687,32 @@ def toroidal_cross_section(axis, mfile_data, plot_data, scan, demo_ranges):
 
     arc(axis, rmajor, style="dashed")
 
+    data = (
+        "ohcth",
+        "precomp",
+        "tfcth",
+        "thshield_ib",
+        "d_vv_in",
+        "shldith",
+        "blnkith",
+        "fwith",
+        "fwoth",
+        "blnkoth",
+        "shldoth",
+        "d_vv_out",
+        "thshield_ob",
+    )
     # Colour in the main components
-    r2, r1 = cumulative_radial_build2("ohcth", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=solenoid)
-
-    r2, r1 = cumulative_radial_build2("precomp", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=cscompression)
-
-    r2, r1 = cumulative_radial_build2("tfcth", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=tfc)
-
-    r2, r1 = cumulative_radial_build2("thshield_ib", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=thermal_shield)
-
-    r2, r1 = cumulative_radial_build2("d_vv_in", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=vessel)
-
-    r2, r1 = cumulative_radial_build2("shldith", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=vessel)
-
-    r2, r1 = cumulative_radial_build2("blnkith", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=blanket)
-
-    r2, r1 = cumulative_radial_build2("fwith", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=firstwall)
+    for key in data:
+        arc_fill(
+            axis,
+            *cumulative_radial_build(
+                key, mfile_data, plot_data, scan, with_previous=True, verbose=False
+            ),
+            color=colour_dict[key],
+        )
 
     arc_fill(axis, rmajor - rminor, rmajor + rminor, color=plasma)
-
-    r2, r1 = cumulative_radial_build2("fwoth", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=firstwall)
-
-    r2, r1 = cumulative_radial_build2("blnkoth", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=blanket)
-
-    r2, r1 = cumulative_radial_build2("shldoth", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=shield)
-
-    r2, r1 = cumulative_radial_build2("d_vv_out", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=vessel)
-
-    r2, r1 = cumulative_radial_build2("thshield_ob", mfile_data, scan)
-    arc_fill(axis, r1, r2, color=thermal_shield)
-
     arc_fill(axis, rdewex, rdewex + ddwex, color=cryostat)
 
     # Segment the TF coil inboard
@@ -572,22 +724,19 @@ def toroidal_cross_section(axis, mfile_data, plot_data, scan, demo_ranges):
     ang = i * spacing
     angl = ang - spacing / 2
     angu = ang + spacing / 2
-    r1, null = cumulative_radial_build2("gapoh", mfile_data, scan)
-    r2, null = cumulative_radial_build2("tfcth", mfile_data, scan)
-    r4, r3 = cumulative_radial_build2("tfthko", mfile_data, scan)
+    r1 = cumulative_radial_build("gapoh", mfile_data, plot_data, scan, verbose=False)
+    r2 = cumulative_radial_build("tfcth", mfile_data, plot_data, scan, verbose=False)
+    r4, r3 = cumulative_radial_build(
+        "tfthko", mfile_data, plot_data, scan, with_previous=True, verbose=False
+    )
 
-    # Coil width
-    w = r2 * np.tan(spacing / 2)
-    xi = r1 * np.cos(angl)
-    yi = r1 * np.sin(angl)
-    xo = r2 * np.cos(angl)
-    yo = r2 * np.sin(angl)
-    axis.plot((xi, xo), (yi, yo), color="black")
-    xi = r1 * np.cos(angu)
-    yi = r1 * np.sin(angu)
-    xo = r2 * np.cos(angu)
-    yo = r2 * np.sin(angu)
-    axis.plot((xi, xo), (yi, yo), color="black")
+    for ang in (angl, angu):
+        axis.plot(
+            (r1 * np.cos(ang), r2 * np.cos(ang)),
+            (r1 * np.sin(ang), r2 * np.sin(ang)),
+            color="black",
+        )
+
     # Annotate plot.
     axis.text(
         rmajor * np.cos(0.3),
@@ -606,131 +755,87 @@ def toroidal_cross_section(axis, mfile_data, plot_data, scan, demo_ranges):
         va="bottom",
     )
 
+    # Coil width
+    w = r2 * np.tan(spacing / 2)
     for item in i:
-        # Neutral beam shielding
-        TF_outboard(
-            axis,
-            item,
-            n_tf=n_tf,
-            r3=r3,
-            r4=r4,
-            w=w + nbshield,
-            facecolor=nbshield_colour,
-        )
-        # Overlay TF coil segments
-        TF_outboard(axis, item, n_tf=n_tf, r3=r3, r4=r4, w=w, facecolor="cyan")
+        for ww, col in ((w + nbshield, nbshield), (w, "cyan")):
+            # Neutral beam shielding and overlay TF coil segments
+            TF_outboard(axis, item, n_tf=n_tf, r3=r3, r4=r4, w=ww, facecolor=col)
 
-    # Winding pack : inboard (superconducor only)
+    # Winding pack : inboard (superconductor only)
     if i_tf_sup == 1:
         # Inboard
+        x1 = r1 + thkcas + tinstf
         if i_tf_turns_integer == 1:
-            rect = patches.Rectangle(
-                [r1 + thkcas + tinstf, 0], dr_tf_wp, wwp1 / 2, lw=0, facecolor=winding
+            axis.add_patch(
+                patches.Rectangle([x1, 0], dr_tf_wp, wwp1 / 2, lw=0, facecolor=winding)
             )
-            axis.add_patch(rect)
         else:
-            rect = patches.Rectangle(
-                [r1 + thkcas + tinstf, 0],
-                dr_tf_wp / 2,
-                wwp2 / 2,
-                lw=0,
-                facecolor=winding,
-            )
-            axis.add_patch(rect)
-
-            rect = patches.Rectangle(
-                [r1 + thkcas + tinstf + dr_tf_wp / 2, 0],
-                dr_tf_wp / 2,
-                wwp1 / 2,
-                lw=0,
-                facecolor=winding,
-            )
-            axis.add_patch(rect)
+            for i, wp in ((x1, wwp2 / 2), (x1 + dr_tf_wp / 2, wwp1 / 2)):
+                axis.add_patch(
+                    patches.Rectangle([i, 0], dr_tf_wp / 2, wp, lw=0, facecolor=winding)
+                )
 
         # Outboard
+        x1 = r3 + casthi + tinstf
         if i_tf_turns_integer == 1:
-            rect = patches.Rectangle(
-                [r3 + casthi + tinstf, 0], dr_tf_wp, wwp1 / 2, lw=0, facecolor=winding
+            axis.add_patch(
+                patches.Rectangle([x1, 0], dr_tf_wp, wwp1 / 2, lw=0, facecolor=winding)
             )
-            axis.add_patch(rect)
         else:
-            rect = patches.Rectangle(
-                [r3 + casthi + tinstf, 0],
-                dr_tf_wp / 2,
-                wwp1 / 2,
-                lw=0,
-                facecolor=winding,
-            )
-            axis.add_patch(rect)
-            rect = patches.Rectangle(
-                [r3 + casthi + tinstf + dr_tf_wp / 2, 0],
-                dr_tf_wp / 2,
-                wwp2 / 2,
-                lw=0,
-                facecolor=winding,
-            )
-            axis.add_patch(rect)
+            for i, wp in ((x1, wwp1 / 2), (x1 + dr_tf_wp / 2, wwp2 / 2)):
+                axis.add_patch(
+                    patches.Rectangle([i, 0], dr_tf_wp / 2, wp, lw=0, facecolor=winding)
+                )
 
     iefrf = mfile_data.data["iefrf"].get_scan(scan)
     if (iefrf == 5) or (iefrf == 8):
         # Neutral beam geometry
-        a = w
-        b = tfthko
         c = beamwd + 2 * nbshield
-        d = r3
-        e = np.sqrt(a**2 + (d + b) ** 2)
+        e = np.sqrt(w**2 + (r3 + tfthko) ** 2)
         # Coordinates of the inner and outer edges of the beam at its tangency point
         rinner = rtanbeam - beamwd
         router = rtanbeam + beamwd
         beta = np.arccos(rinner / e)
-        xinner = rinner * np.cos(beta)
-        yinner = rinner * np.sin(beta)
         xouter = router * np.cos(beta)
         youter = router * np.sin(beta)
         # Corner of TF coils
         xcorner = r4
         ycorner = w + nbshield
-        axis.plot(
-            [xinner, xcorner], [yinner, ycorner], linestyle="dotted", color="black"
+        inner = ([rinner * np.cos(beta), xcorner], [rinner * np.sin(beta), ycorner])
+        outer = (
+            [xouter, xcorner + c * np.cos(beta) - nbshield * np.cos(beta)],
+            [youter, ycorner + c * np.sin(beta) - nbshield * np.sin(beta)],
         )
-        x = xcorner + c * np.cos(beta) - nbshield * np.cos(beta)
-        y = ycorner + c * np.sin(beta) - nbshield * np.sin(beta)
-        axis.plot([xouter, x], [youter, y], linestyle="dotted", color="black")
+        for x, y in (inner, outer):
+            axis.plot(x, y, linestyle="dotted", color="black")
 
     # Ranges
-    # ---
-    # DEMO : Fixed ranges for comparison
     if demo_ranges:
+        # DEMO : Fixed ranges for comparison
         axis.set_ylim([0, 20])
         axis.set_xlim([0, 20])
-
-    # Adapatative ranges
     else:
+        # Adapatative ranges
         axis.set_ylim([0.0, axis.get_ylim()[1]])
         axis.set_xlim([0.0, axis.get_xlim()[1]])
-    # ---
 
 
 def TF_outboard(axis, item, n_tf, r3, r4, w, facecolor):
-    spacing = 2 * np.pi / n_tf
-    ang = item * spacing
+    # with spacing
+    ang = item * 2 * np.pi / n_tf
     dx = w * np.sin(ang)
     dy = w * np.cos(ang)
-    x1 = r3 * np.cos(ang) + dx
-    y1 = r3 * np.sin(ang) - dy
-    x2 = r4 * np.cos(ang) + dx
-    y2 = r4 * np.sin(ang) - dy
-    x3 = r4 * np.cos(ang) - dx
-    y3 = r4 * np.sin(ang) + dy
-    x4 = r3 * np.cos(ang) - dx
-    y4 = r3 * np.sin(ang) + dy
-    verts = [(x1, y1), (x2, y2), (x3, y3), (x4, y4), (x1, y1)]
-    path = Path(verts, closed=True)
-    patch = patches.PathPatch(path, facecolor=facecolor, lw=0)
-    axis.add_patch(patch)
+    verts = [
+        (r * np.cos(ang) + x_s * dx, r * np.sin(ang) + y_s * dy)
+        for x_s, y_s, r in zip((1, 1, -1 - 1), (-1, -1, 1, 1), (r3, r4, r4, r3))
+    ]
+    axis.add_patch(
+        patches.PathPatch(Path(verts, closed=True), facecolor=facecolor, lw=0)
+    )
 
 
-def arc(axis, r, theta1=0, theta2=rtangle, style="solid"):
+def arc(axis, r, theta1=0, theta2=RTANGLE, style="solid"):
     """Plots an arc.
 
     Arguments
@@ -741,10 +846,8 @@ def arc(axis, r, theta1=0, theta2=rtangle, style="solid"):
     theta2: finishing polar angle
 
     """
-    angs = np.linspace(theta1, theta2)
-    xs = r * np.cos(angs)
-    ys = r * np.sin(angs)
-    axis.plot(xs, ys, linestyle=style, color="black", lw=0.2)
+    ang = np.linspace(theta1, theta2)
+    axis.plot(r * np.cos(ang), r * np.sin(ang), linestyle=style, color="black", lw=0.2)
 
 
 def arc_fill(axis, r1, r2, color="pink"):
@@ -756,23 +859,18 @@ def arc_fill(axis, r1, r2, color="pink"):
     r1, r2 radii to be filled
 
     """
-    angs = np.linspace(0, rtangle, endpoint=True)
-    xs1 = r1 * np.cos(angs)
-    ys1 = r1 * np.sin(angs)
-    angs = np.linspace(rtangle, 0, endpoint=True)
-    xs2 = r2 * np.cos(angs)
-    ys2 = r2 * np.sin(angs)
-    verts = list(zip(xs1, ys1))
-    verts.extend(list(zip(xs2, ys2)))
-    endpoint = [(r2, 0)]
-    verts.extend(endpoint)
-    path = Path(verts, closed=True)
-    patch = patches.PathPatch(path, facecolor=color, lw=0)
-    axis.add_patch(patch)
+    ang1 = np.linspace(0, RTANGLE, endpoint=True)
+    ang2 = np.linspace(RTANGLE, 0, endpoint=True)
+    verts = (
+        list(zip(r1 * np.cos(ang1), r1 * np.sin(ang1)))
+        + list(zip(r2 * np.cos(ang2), r2 * np.sin(ang2)))
+        + [(r2, 0)]
+    )
+    axis.add_patch(patches.PathPatch(Path(verts, closed=True), facecolor=color, lw=0))
 
 
 def ellips_fill(
-    axis, a1=0, a2=0, b1=0, b2=0, x0=0, y0=0, ang1=0, ang2=rtangle, color="pink"
+    axis, a1=0, a2=0, b1=0, b2=0, x0=0, y0=0, ang1=0, ang2=RTANGLE, color="pink"
 ):
     """Fills the space between two concentric ellipse sectors.
 
@@ -837,44 +935,13 @@ def plot_nprofile(prof, demo_ranges, plot_data):
     prof.plot(rho, ne)
 
     # Ranges
-    # ---
-    # DEMO : Fixed ranges for comparison
     prof.set_xlim([0, 1])
     if demo_ranges:
+        # DEMO : Fixed ranges for comparison
         prof.set_ylim([0, 20])
-
-    # Adapatative ranges
     else:
+        # Adaptive ranges
         prof.set_ylim([0, prof.get_ylim()[1]])
-    # ---
-
-
-def plot_plasmod_nprofile(prof, demo_ranges):
-    """Function to plot plasmod density profile
-    Arguments:
-      prof --> axis object to add plot to
-    """
-
-    prof.set_xlabel("r/a")
-    prof.set_ylabel(r"$n_{e}\cdot 10^{19} \mathrm{m}^{-3}$")
-    prof.set_title("Density profile")
-    prof.plot(pmod_r, pmod_ne, label="plasmod $n_e$")
-    prof.plot(pmod_r, pmod_ni, label="plasmod $n_i$")
-    prof.plot(pmod_r, pmod_nt, label="plasmod $n_T$")
-    prof.plot(pmod_r, pmod_nd, label="plasmod $n_D$")
-    prof.legend()
-
-    # Ranges
-    # ---
-    # DEMO : Fixed ranges for comparison
-    prof.set_xlim([0, 1])
-    if demo_ranges:
-        prof.set_ylim([0, 20])
-
-    # Adapatative ranges
-    else:
-        prof.set_ylim([0, prof.get_ylim()[1]])
-    # ---
 
 
 def plot_tprofile(prof, demo_ranges, plot_data):
@@ -925,32 +992,6 @@ def plot_tprofile(prof, demo_ranges, plot_data):
     # ---
 
 
-def plot_plasmod_tprofile(prof, demo_ranges):
-    """Function to plot plasmod temperature profile
-    Arguments:
-      prof --> axis object to add plot to
-    """
-
-    prof.set_xlabel("r/a")
-    prof.set_ylabel("$T_{e}$ [keV]")
-    prof.set_title("Temperature profile")
-    prof.plot(pmod_r, pmod_te, label="plasmod $T_e$")
-    prof.plot(pmod_r, pmod_ti, label="plasmod $T_i$")
-    prof.legend()
-
-    # Ranges
-    # ---
-    prof.set_xlim([0, 1])
-    # DEMO : Fixed ranges for comparison
-    if demo_ranges:
-        prof.set_ylim([0, 50])
-
-    # Adapatative ranges
-    else:
-        prof.set_ylim([0, prof.get_ylim()[1]])
-    # ---
-
-
 def plot_qprofile(prof, demo_ranges, plot_data):
     """Function to plot q profile, formula taken from Nevins bootstrap model.
 
@@ -970,31 +1011,6 @@ def plot_qprofile(prof, demo_ranges, plot_data):
 
     prof.plot(rho, q_r_nevin, label="Nevins")
     prof.plot(rho, q_r_sauter, label="Sauter")
-    prof.legend()
-
-    # Ranges
-    # ---
-    prof.set_xlim([0, 1])
-    # DEMO : Fixed ranges for comparison
-    if demo_ranges:
-        prof.set_ylim([0, 10])
-
-    # Adapatative ranges
-    else:
-        prof.set_ylim([0, prof.get_ylim()[1]])
-    # ---
-
-
-def plot_plasmod_qprofile(prof, demo_ranges):
-    """Function to plot plasmod q profile
-    Arguments:
-      prof --> axis object to add plot to
-    """
-
-    prof.set_xlabel("r/a")
-    prof.set_ylabel("-")
-    prof.set_title("q profile")
-    prof.plot(pmod_r, pmod_q, label="plasmod $q(r/a)$")
     prof.legend()
 
     # Ranges
@@ -1116,7 +1132,6 @@ def plot_radprofile(prof, mfile_data, plot_data, scan, impp, demo_ranges) -> flo
       scan --> scan number to use
       impp --> impurity path
     """
-
     alphan = plot_data.alphan
     alphat = plot_data.alphat
     ne0 = plot_data.ne0
@@ -1259,43 +1274,20 @@ def plot_radprofile(prof, mfile_data, plot_data, scan, impp, demo_ranges) -> flo
     prof.plot(rho, prad, label="Total")
     prof.plot(rho, pimpden[0] * 2.0e-6, label="H")
     prof.plot(rho, pimpden[1] * 2.0e-6, label="He")
-    if imp_frac[2] > 1.0e-30:
-        prof.plot(rho, pimpden[2] * 2.0e-6, label="Be")
-    if imp_frac[3] > 1.0e-30:
-        prof.plot(rho, pimpden[3] * 2.0e-6, label="C")
-    if imp_frac[4] > 1.0e-30:
-        prof.plot(rho, pimpden[4] * 2.0e-6, label="N")
-    if imp_frac[5] > 1.0e-30:
-        prof.plot(rho, pimpden[5] * 2.0e-6, label="O")
-    if imp_frac[6] > 1.0e-30:
-        prof.plot(rho, pimpden[6] * 2.0e-6, label="Ne")
-    if imp_frac[7] > 1.0e-30:
-        prof.plot(rho, pimpden[7] * 2.0e-6, label="Si")
-    if imp_frac[8] > 1.0e-30:
-        prof.plot(rho, pimpden[8] * 2.0e-6, label="Ar")
-    if imp_frac[9] > 1.0e-30:
-        prof.plot(rho, pimpden[9] * 2.0e-6, label="Fe")
-    if imp_frac[10] > 1.0e-30:
-        prof.plot(rho, pimpden[10] * 2.0e-6, label="Ni")
-    if imp_frac[11] > 1.0e-30:
-        prof.plot(rho, pimpden[11] * 2.0e-6, label="Kr")
-    if imp_frac[12] > 1.0e-30:
-        prof.plot(rho, pimpden[12] * 2.0e-6, label="Xe")
-    if imp_frac[13] > 1.0e-30:
-        prof.plot(rho, pimpden[13] * 2.0e-6, label="W")
+    labels = ["Be", "C", "N", "O", "Ne", "Si", "Ar", "Fe", "Ni", "Kr", "Xe", "W"]
+    for i_f, label, p_den in zip(imp_frac[2:14], labels, pimpden[2:14]):
+        if i_f > 1.0e-30:
+            prof.plot(rho, p_den * 2.0e-6, label=label)
     prof.legend()
 
     # Ranges
-    # ---
     prof.set_xlim([0, 1])
-    # DEMO : Fixed ranges for comparison
     if demo_ranges:
+        # DEMO : Fixed ranges for comparison
         prof.set_ylim([0, 0.5])
-
-    # Adapatative ranges
     else:
+        # Adapatative ranges
         prof.set_ylim([0, prof.get_ylim()[1]])
-    # ---
 
 
 def plot_vacuum_vessel(axis, mfile_data, plot_data, scan):
@@ -1318,42 +1310,42 @@ def plot_vacuum_vessel(axis, mfile_data, plot_data, scan):
 
     # Outer side (furthest from plasma)
     radx = (
-        cumulative_radial_build("d_vv_out", mfile_data, scan)
-        + cumulative_radial_build("gapds", mfile_data, scan)
+        cumulative_radial_build("d_vv_out", mfile_data, plot_data, scan)
+        + cumulative_radial_build("gapds", mfile_data, plot_data, scan)
     ) / 2.0
     rminx = (
-        cumulative_radial_build("d_vv_out", mfile_data, scan)
-        - cumulative_radial_build("gapds", mfile_data, scan)
+        cumulative_radial_build("d_vv_out", mfile_data, plot_data, scan)
+        - cumulative_radial_build("gapds", mfile_data, plot_data, scan)
     ) / 2.0
 
     kapx = cumulative_upper["d_vv_top"] / rminx
 
     if i_single_null == 1:
         (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        temp_array_1 = temp_array_1 + ((rs, zs))
+        temp_array_1 = (*temp_array_1, rs, zs)
 
     kapx = cumulative_lower["d_vv_bot"] / rminx
     (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-    temp_array_2 = temp_array_2 + ((rs, zs))
+    temp_array_2 = (*temp_array_2, rs, zs)
 
     # Inner side (nearest to the plasma)
     radx = (
-        cumulative_radial_build("shldoth", mfile_data, scan)
-        + cumulative_radial_build("d_vv_in", mfile_data, scan)
+        cumulative_radial_build("shldoth", mfile_data, plot_data, scan)
+        + cumulative_radial_build("d_vv_in", mfile_data, plot_data, scan)
     ) / 2.0
     rminx = (
-        cumulative_radial_build("shldoth", mfile_data, scan)
-        - cumulative_radial_build("d_vv_in", mfile_data, scan)
+        cumulative_radial_build("shldoth", mfile_data, plot_data, scan)
+        - cumulative_radial_build("d_vv_in", mfile_data, plot_data, scan)
     ) / 2.0
 
     if i_single_null == 1:
         kapx = (cumulative_upper["d_vv_top"] - upper["d_vv_top"]) / rminx
         (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        temp_array_1 = temp_array_1 + ((rs, zs))
+        temp_array_1 = (*temp_array_1, rs, zs)
 
     kapx = (cumulative_lower["d_vv_bot"] + lower["d_vv_bot"]) / rminx
     (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-    temp_array_2 = temp_array_2 + ((rs, zs))
+    temp_array_2 = (*temp_array_2, rs, zs)
 
     # Single null: Draw top half from output
     # Double null: Reflect bottom half to top
@@ -1382,54 +1374,45 @@ def plot_shield(axis, mfile_data, plot_data, scan):
     cumulative_lower = plot_data.cumulative_lower
     i_single_null = mfile_data.data["i_single_null"].get_scan(scan)
     triang = mfile_data.data["triang95"].get_scan(scan)
-    temp_array_1 = ()
-    temp_array_2 = ()
 
     # Side furthest from plasma
     radx = (
-        cumulative_radial_build("shldoth", mfile_data, scan)
-        + cumulative_radial_build("d_vv_in", mfile_data, scan)
+        cumulative_radial_build("shldoth", mfile_data, plot_data, scan)
+        + cumulative_radial_build("d_vv_in", mfile_data, plot_data, scan)
     ) / 2.0
     rminx = (
-        cumulative_radial_build("shldoth", mfile_data, scan)
-        - cumulative_radial_build("d_vv_in", mfile_data, scan)
+        cumulative_radial_build("shldoth", mfile_data, plot_data, scan)
+        - cumulative_radial_build("d_vv_in", mfile_data, plot_data, scan)
     ) / 2.0
 
     if i_single_null == 1:
         kapx = cumulative_upper["shldtth"] / rminx
-        (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        temp_array_1 = temp_array_1 + ((rs, zs))
+        temp_array_1 = plotdh(axis, radx, rminx, triang, kapx)
 
     kapx = cumulative_lower["shldlth"] / rminx
-    (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-    temp_array_2 = temp_array_2 + ((rs, zs))
+    temp_array_2 = plotdh(axis, radx, rminx, triang, kapx)
 
     # Side nearest to the plasma
     radx = (
-        cumulative_radial_build("vvblgapo", mfile_data, scan)
-        + cumulative_radial_build("shldith", mfile_data, scan)
+        cumulative_radial_build("vvblgapo", mfile_data, plot_data, scan)
+        + cumulative_radial_build("shldith", mfile_data, plot_data, scan)
     ) / 2.0
     rminx = (
-        cumulative_radial_build("vvblgapo", mfile_data, scan)
-        - cumulative_radial_build("shldith", mfile_data, scan)
+        cumulative_radial_build("vvblgapo", mfile_data, plot_data, scan)
+        - cumulative_radial_build("shldith", mfile_data, plot_data, scan)
     ) / 2.0
-
-    if i_single_null == 1:
-        kapx = (cumulative_upper["vvblgap"]) / rminx
-        (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        temp_array_1 = temp_array_1 + ((rs, zs))
-
-    kapx = (cumulative_lower["divfix"]) / rminx
-    (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-    temp_array_2 = temp_array_2 + ((rs, zs))
 
     # Single null: Draw top half from output
     # Double null: Reflect bottom half to top
     if i_single_null == 1:
+        kapx = (cumulative_upper["vvblgap"]) / rminx
+        temp_array_1 = (*temp_array_1, *plotdh(axis, radx, rminx, triang, kapx))
         rs = np.concatenate([temp_array_1[0], temp_array_1[2][::-1]])
         zs = np.concatenate([temp_array_1[1], temp_array_1[3][::-1]])
         axis.fill(rs, zs, color=shield)
 
+    kapx = (cumulative_lower["divfix"]) / rminx
+    temp_array_2 = (*temp_array_2, *plotdh(axis, radx, rminx, triang, kapx))
     rs = np.concatenate([temp_array_2[0], temp_array_2[2][::-1]])
     zs = np.concatenate([temp_array_2[1], temp_array_2[3][::-1]])
     axis.fill(rs, zs, color=shield)
@@ -1452,39 +1435,35 @@ def plot_blanket(axis, mfile_data, plot_data, scan):
     blnkoth = plot_data.blnkoth
     blnkith = plot_data.blnkith
 
-    point_array = ()
-
     # Single null: Draw top half from output
     # Double null: Reflect bottom half to top
-    i_single_null = mfile_data.data["i_single_null"].get_scan(scan)
+    i_single_null = plot_data.i_single_null
     if i_single_null == 1:
         # Upper blanket: outer surface
         radx = (
-            cumulative_radial_build("blnkoth", mfile_data, scan)
-            + cumulative_radial_build("vvblgapi", mfile_data, scan)
+            cumulative_radial_build("blnkoth", mfile_data, plot_data, scan)
+            + cumulative_radial_build("vvblgapi", mfile_data, plot_data, scan)
         ) / 2.0
         rminx = (
-            cumulative_radial_build("blnkoth", mfile_data, scan)
-            - cumulative_radial_build("vvblgapi", mfile_data, scan)
+            cumulative_radial_build("blnkoth", mfile_data, plot_data, scan)
+            - cumulative_radial_build("vvblgapi", mfile_data, plot_data, scan)
         ) / 2.0
 
         kapx = cumulative_upper["blnktth"] / rminx
-        (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        point_array = point_array + ((rs, zs))
+        point_array = plotdh(axis, radx, rminx, triang, kapx)
 
         # Upper blanket: inner surface
         radx = (
-            cumulative_radial_build("fwoth", mfile_data, scan)
-            + cumulative_radial_build("blnkith", mfile_data, scan)
+            cumulative_radial_build("fwoth", mfile_data, plot_data, scan)
+            + cumulative_radial_build("blnkith", mfile_data, plot_data, scan)
         ) / 2.0
         rminx = (
-            cumulative_radial_build("fwoth", mfile_data, scan)
-            - cumulative_radial_build("blnkith", mfile_data, scan)
+            cumulative_radial_build("fwoth", mfile_data, plot_data, scan)
+            - cumulative_radial_build("blnkith", mfile_data, plot_data, scan)
         ) / 2.0
 
         kapx = cumulative_upper["fwtth"] / rminx
-        (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        point_array = point_array + ((rs, zs))
+        point_array = (*point_array, *plotdh(axis, radx, rminx, triang, kapx))
 
         # Plot upper blanket
         rs = np.concatenate([point_array[0], point_array[2][::-1]])
@@ -1493,8 +1472,8 @@ def plot_blanket(axis, mfile_data, plot_data, scan):
 
     # Lower blanket
     blnktth = mfile_data.data["blnktth"].get_scan(scan)
-    c_shldith = cumulative_radial_build("shldith", mfile_data, scan)
-    c_blnkoth = cumulative_radial_build("blnkoth", mfile_data, scan)
+    c_shldith = cumulative_radial_build("shldith", mfile_data, plot_data, scan)
+    c_blnkoth = cumulative_radial_build("blnkoth", mfile_data, plot_data, scan)
     divgap = cumulative_lower["divfix"]
     plotdhgap(
         axis, c_shldith, c_blnkoth, blnkith, blnkoth, divgap, -blnktth, triang, blanket
@@ -1527,41 +1506,37 @@ def plot_firstwall(axis, mfile_data, plot_data, scan):
     triang = plot_data.triang
     fwoth = plot_data.fwoth
     fwith = plot_data.fwith
-
-    blnktth = mfile_data.data["blnktth"].get_scan(scan)
-    tfwvt = mfile_data.data["fwtth"].get_scan(scan)
-    i_single_null = mfile_data.data["i_single_null"].get_scan(scan)
-    point_array = ()
+    blnktth = plot_data.blnktth
+    tfwvt = plot_data.fwtth
+    i_single_null = plot_data.i_single_null
 
     # Single null: Draw top half from output
     # Double null: Reflect bottom half to top
     if i_single_null == 1:
         # Upper first wall: outer surface
         radx = (
-            cumulative_radial_build("fwoth", mfile_data, scan)
-            + cumulative_radial_build("blnkith", mfile_data, scan)
+            cumulative_radial_build("fwoth", mfile_data, plot_data, scan)
+            + cumulative_radial_build("blnkith", mfile_data, plot_data, scan)
         ) / 2.0
         rminx = (
-            cumulative_radial_build("fwoth", mfile_data, scan)
-            - cumulative_radial_build("blnkith", mfile_data, scan)
+            cumulative_radial_build("fwoth", mfile_data, plot_data, scan)
+            - cumulative_radial_build("blnkith", mfile_data, plot_data, scan)
         ) / 2.0
 
         kapx = cumulative_upper["fwtth"] / rminx
-        (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        point_array = point_array + ((rs, zs))
+        point_array = plotdh(axis, radx, rminx, triang, kapx)
 
         # Upper first wall: inner surface
         radx = (
-            cumulative_radial_build("scraplo", mfile_data, scan)
-            + cumulative_radial_build("fwith", mfile_data, scan)
+            cumulative_radial_build("scraplo", mfile_data, plot_data, scan)
+            + cumulative_radial_build("fwith", mfile_data, plot_data, scan)
         ) / 2.0
         rminx = (
-            cumulative_radial_build("scraplo", mfile_data, scan)
-            - cumulative_radial_build("fwith", mfile_data, scan)
+            cumulative_radial_build("scraplo", mfile_data, plot_data, scan)
+            - cumulative_radial_build("fwith", mfile_data, plot_data, scan)
         ) / 2.0
 
-        (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        point_array = point_array + ((rs, zs))
+        point_array = (*point_array, *plotdh(axis, radx, rminx, triang, kapx))
 
         # Plot upper first wall
         rs = np.concatenate([point_array[0], point_array[2][::-1]])
@@ -1569,8 +1544,8 @@ def plot_firstwall(axis, mfile_data, plot_data, scan):
         axis.fill(rs, zs, color=firstwall)
 
     # Lower first wall
-    c_blnkith = cumulative_radial_build("blnkith", mfile_data, scan)
-    c_fwoth = cumulative_radial_build("fwoth", mfile_data, scan)
+    c_blnkith = cumulative_radial_build("blnkith", mfile_data, plot_data, scan)
+    c_fwoth = cumulative_radial_build("fwoth", mfile_data, plot_data, scan)
     divgap = cumulative_lower["divfix"]
 
     plotdhgap(
@@ -1603,11 +1578,11 @@ def angle_check(angle1, angle2):
     """Function to perform TF coil angle check"""
     if angle1 > 1:
         angle1 = 1
-    if angle1 < -1:
+    elif angle1 < -1:
         angle1 = -1
     if angle2 > 1:
         angle2 = 1
-    if angle2 < -1:
+    elif angle2 < -1:
         angle2 = -1
     return angle1, angle2
 
@@ -1621,139 +1596,121 @@ def plot_tf_coils(axis, mfile_data, plot_data, scan):
         scan --> scan number to use
 
     """
+
     tfcth = plot_data.tfcth
+    rt = RTANGLE
+    rt2 = 2 * rt
 
     # Arc points
     # MDK Only 4 points now required for elliptical arcs
-    x1 = mfile_data.data["xarc(1)"].get_scan(scan)
-    y1 = mfile_data.data["yarc(1)"].get_scan(scan)
-    x2 = mfile_data.data["xarc(2)"].get_scan(scan)
-    y2 = mfile_data.data["yarc(2)"].get_scan(scan)
-    x3 = mfile_data.data["xarc(3)"].get_scan(scan)
-    y3 = mfile_data.data["yarc(3)"].get_scan(scan)
-    x4 = mfile_data.data["xarc(4)"].get_scan(scan)
-    y4 = mfile_data.data["yarc(4)"].get_scan(scan)
-    x5 = mfile_data.data["xarc(5)"].get_scan(scan)
-    y5 = mfile_data.data["yarc(5)"].get_scan(scan)
+    x1, x2, x3, x4, x5 = (
+        mfile_data.data[f"xarc({i})"].get_scan(scan) for i in range(1, 6)
+    )
+    y1, y2, y3, y4, y5 = (
+        mfile_data.data[f"xarc({i})"].get_scan(scan) for i in range(1, 6)
+    )
     if y3 != 0:
         print("TF coil geometry: The value of yarc(3) is not zero, but should be.")
 
     # Check for TF coil shape
-    if "i_tf_shape" in mfile_data.data.keys():
-        i_tf_shape = int(mfile_data.data["i_tf_shape"].get_scan(scan))
-    else:
-        i_tf_shape = int(1)
+    i_tf_shape = (
+        int(mfile_data.data["i_tf_shape"].get_scan(scan))
+        if "i_tf_shape" in mfile_data.data
+        else 1
+    )
 
     #  D-shaped (i_tf_shape=1), Picture frame (i_tf_shape=2)
     if i_tf_shape == 2:
         # Inboard leg
-        rect1 = patches.Rectangle(
-            [x5 - tfcth, y5 - tfcth],
-            tfcth,
-            (y1 - y5 + 2.0 * tfcth),
-            lw=0,
-            facecolor="cyan",
+        axis.add_patch(
+            patches.Rectangle(
+                [x5 - tfcth, y5 - tfcth],
+                tfcth,
+                (y1 - y5 + 2.0 * tfcth),
+                lw=0,
+                facecolor="cyan",
+            )
         )
         # Outboard leg vertical
-        rect2 = patches.Rectangle(
-            [x4, y4 - tfcth], tfcth, (y2 - y4 + 2.0 * tfcth), lw=0, facecolor="cyan"
+        axis.add_patch(
+            patches.Rectangle(
+                [x4, y4 - tfcth], tfcth, (y2 - y4 + 2.0 * tfcth), lw=0, facecolor="cyan"
+            )
         )
         # Outboard leg horizontal bottom
-        rect3 = patches.Rectangle(
-            [x5, y5 - tfcth], x4 - x5, tfcth, lw=0, facecolor="cyan"
+        axis.add_patch(
+            patches.Rectangle([x5, y5 - tfcth], x4 - x5, tfcth, lw=0, facecolor="cyan")
         )
         # Outboard leg horizontal top
-        rect4 = patches.Rectangle([x1, y1], x2 - x1, tfcth, lw=0, facecolor="cyan")
-
-        # Plot it all
-        axis.add_patch(rect1)
-        axis.add_patch(rect2)
-        axis.add_patch(rect3)
-        axis.add_patch(rect4)
+        axis.add_patch(
+            patches.Rectangle([x1, y1], x2 - x1, tfcth, lw=0, facecolor="cyan")
+        )
 
     else:
         # Inboard upper arc
-        x0 = x2
-        y0 = y1
+        c = "cyan"
         a1 = x2 - x1
         b1 = y2 - y1
-        a2 = a1 + tfcth
-        b2 = b1 + tfcth
         ellips_fill(
             axis,
             a1=a1,
-            a2=a2,
+            a2=a1 + tfcth,
             b1=b1,
-            b2=b2,
-            x0=x0,
-            y0=y0,
-            ang1=rtangle,
-            ang2=2 * rtangle,
-            color="cyan",
+            b2=b1 + tfcth,
+            x0=x2,
+            y0=y1,
+            ang1=rt,
+            ang2=rt2,
+            color=c,
         )
         # Outboard upper arc
-        x0 = x2
-        y0 = 0
         a1 = x3 - x2
-        b1 = y2
-        a2 = a1 + tfcth
-        b2 = b1 + tfcth
         ellips_fill(
             axis,
             a1=a1,
-            a2=a2,
-            b1=b1,
-            b2=b2,
-            x0=x0,
-            y0=y0,
+            a2=a1 + tfcth,
+            b1=y2,
+            b2=y2 + tfcth,
+            x0=x2,
+            y0=0,
             ang1=0,
-            ang2=rtangle,
-            color="cyan",
+            ang2=rt,
+            color=c,
         )
         # Inboard lower arc
-        x0 = x4
-        y0 = y5
         a1 = x4 - x5
         b1 = y5 - y4
-        a2 = a1 + tfcth
-        b2 = b1 + tfcth
         ellips_fill(
             axis,
             a1=a1,
-            a2=a2,
+            a2=a1 + tfcth,
             b1=b1,
-            b2=b2,
-            x0=x0,
-            y0=y0,
-            ang1=-rtangle,
-            ang2=-2 * rtangle,
-            color="cyan",
+            b2=b1 + tfcth,
+            x0=x4,
+            y0=y5,
+            ang1=-rt,
+            ang2=-rt2,
+            color=c,
         )
         # Outboard lower arc
-        x0 = x4
-        y0 = 0
         a1 = x3 - x2
-        b1 = -y4
-        a2 = a1 + tfcth
-        b2 = b1 + tfcth
         ellips_fill(
             axis,
             a1=a1,
-            a2=a2,
-            b1=b1,
-            b2=b2,
-            x0=x0,
-            y0=y0,
+            a2=a1 + tfcth,
+            b1=-y4,
+            b2=tfcth - y4,
+            x0=x4,
+            y0=0,
             ang1=0,
-            ang2=-rtangle,
-            color="cyan",
+            ang2=-rt,
+            color=c,
         )
         # Vertical leg
         # Bottom left corner
-        rect = patches.Rectangle(
-            [x5 - tfcth, y5], tfcth, (y1 - y5), lw=0, facecolor="cyan"
+        axis.add_patch(
+            patches.Rectangle([x5 - tfcth, y5], tfcth, (y1 - y5), lw=0, facecolor=c)
         )
-        axis.add_patch(rect)
 
 
 def plot_pf_coils(axis, mfile_data, scan):
@@ -1764,16 +1721,9 @@ def plot_pf_coils(axis, mfile_data, scan):
         mfile_data --> MFILE.DAT object
         scan --> scan number to use
     """
-
-    coils_r = []
-    coils_z = []
-    coils_dr = []
-    coils_dz = []
-    coil_text = []
-
     # Number of coils (1 is OH coil)
     number_of_coils = 0
-    for item in mfile_data.data.keys():
+    for item in mfile_data.data:
         if "rpf[" in item:
             number_of_coils += 1
 
@@ -1782,49 +1732,23 @@ def plot_pf_coils(axis, mfile_data, scan):
     ohdz = mfile_data.data["ohdz"].get_scan(scan)
 
     # Check for Central Solenoid
-    if "iohcl" in mfile_data.data.keys():
-        iohcl = mfile_data.data["iohcl"].get_scan(scan)
-    else:
-        iohcl = 1
+    iohcl = mfile_data.data["iohcl"].get_scan(scan) if "iohcl" in mfile_data.data else 1
 
     # If Central Solenoid present, ignore last entry in for loop
     # The last entry will be the OH coil in this case
-    if iohcl == 0:
-        noc = number_of_coils + 1
-    else:
-        noc = number_of_coils
-
-    for coil in range(0, noc):
-        coils_r.append(mfile_data.data["rpf[{:01}]".format(coil)].get_scan(scan))
-        coils_z.append(mfile_data.data["zpf[{:01}]".format(coil)].get_scan(scan))
-        coils_dr.append(mfile_data.data["pfdr({:01})".format(coil)].get_scan(scan))
-        coils_dz.append(mfile_data.data["pfdz({:01})".format(coil)].get_scan(scan))
-        coil_text.append(str(coil + 1))
-
-    for i in range(len(coils_r)):
-        r_1 = coils_r[i] - 0.5 * coils_dr[i]
-        z_1 = coils_z[i] - 0.5 * coils_dz[i]
-        r_2 = coils_r[i] - 0.5 * coils_dr[i]
-        z_2 = coils_z[i] + 0.5 * coils_dz[i]
-        r_3 = coils_r[i] + 0.5 * coils_dr[i]
-        z_3 = coils_z[i] + 0.5 * coils_dz[i]
-        r_4 = coils_r[i] + 0.5 * coils_dr[i]
-        z_4 = coils_z[i] - 0.5 * coils_dz[i]
-        r_5 = coils_r[i] - 0.5 * coils_dr[i]
-        z_5 = coils_z[i] - 0.5 * coils_dz[i]
-
-        r_points = [r_1, r_2, r_3, r_4, r_5]
-        z_points = [z_1, z_2, z_3, z_4, z_5]
+    for coil in range(number_of_coils + 1 if iohcl == 0 else number_of_coils):
+        r = mfile_data.data[f"rpf[{coil:01}]"].get_scan(scan)
+        z = mfile_data.data[f"zpf[{coil:01}]"].get_scan(scan)
+        dr = mfile_data.data[f"pfdr[{coil:01}]"].get_scan(scan)
+        dz = mfile_data.data[f"pfdz[{coil:01}]"].get_scan(scan)
+        r_points = [r + val * 0.5 * dr for val in (-1, -1, +1, +1, -1)]
+        z_points = [r + val * 0.5 * dr for val in (-1, +1, +1, -1, -1)]
         axis.plot(r_points, z_points, color="black")
-        rect = patches.Rectangle([bore, -ohdz / 2], ohcth, ohdz, lw=0, facecolor="pink")
-        axis.add_patch(rect)
+        axis.add_patch(
+            patches.Rectangle([bore, -ohdz / 2], ohcth, ohdz, lw=0, facecolor="pink")
+        )
         axis.text(
-            coils_r[i],
-            coils_z[i],
-            coil_text[i],
-            ha="center",
-            va="center",
-            fontsize=5 * abs((coils_dr[i] * coils_dz[i])),
+            r, z, str(coil + 1), ha="center", va="center", fontsize=5 * abs(dr * dz)
         )
 
 
@@ -1839,73 +1763,42 @@ def plot_info(axis, data, mfile_data, scan):
 
     """
     eqpos = 0.7
-    for i in range(len(data)):
-        colorflag = "black"
-        if mfile_data.data[data[i][0]].exists:
-            if mfile_data.data[data[i][0]].var_flag == "ITV":
-                colorflag = "red"
-            elif mfile_data.data[data[i][0]].var_flag == "OP":
-                colorflag = "blue"
-        axis.text(0, -i, data[i][1], color=colorflag, ha="left", va="center")
-        if isinstance(data[i][0], str):
-            if data[i][0] == "":
+    for i, d in enumerate(data):
+        col = "black"
+        if mfile_data.data[d[0]].exists:
+            if mfile_data.data[d[0]].var_flag == "ITV":
+                col = "red"
+            elif mfile_data.data[d[0]].var_flag == "OP":
+                col = "blue"
+        axis.text(0, -i, d[1], color=col, ha="left", va="center")
+        if isinstance(d[0], str):
+            if d[0] == "":
                 axis.text(eqpos, -i, "\n", ha="left", va="center")
-            elif data[i][0][0] == "#":
-                axis.text(
-                    -0.05, -i, "{}\n".format(data[i][0][1:]), ha="left", va="center"
+            elif d[0][0] == "#":
+                axis.text(-0.05, -i, f"{d[0][1:]}\n", ha="left", va="center")
+            elif d[0][0] == "!":
+                value = str(d[0][1:]).replace('"', "")
+                axis.text(0.4, -i, f"-->  {value} {d[2]}", ha="left", va="center")
+            elif mfile_data.data[d[0]].exists:
+                dat = mfile_data.data[d[0]].get_scan(scan)
+                value = (
+                    dat
+                    if isinstance(dat, str)
+                    else f"{mfile_data.data[d[0]].get_scan(scan):.4g}"
                 )
-            elif data[i][0][0] == "!":
-                value = data[i][0][1:]
+                if "alpha" in d[0]:
+                    value = str(float(value) + 1.0)
                 axis.text(
-                    0.4,
-                    -i,
-                    "-->  " + str(value.replace('"', "")) + " " + data[i][2],
-                    ha="left",
-                    va="center",
+                    eqpos, -i, f"= {value} {d[2]}", color=col, ha="left", va="center"
                 )
             else:
-                if mfile_data.data[data[i][0]].exists:
-                    dat = mfile_data.data[data[i][0]].get_scan(scan)
-                    if isinstance(dat, str):
-                        value = dat
-                    else:
-                        value = "{:.4g}".format(
-                            mfile_data.data[data[i][0]].get_scan(scan)
-                        )
-                    if "alpha" in data[i][0]:
-                        value = str(float(value) + 1.0)
-                    axis.text(
-                        eqpos,
-                        -i,
-                        "= " + value + " " + data[i][2],
-                        color=colorflag,
-                        ha="left",
-                        va="center",
-                    )
-                else:
-                    mfile_data.data[data[i][0]].get_scan(-1)
-                    axis.text(
-                        eqpos,
-                        -i,
-                        "=" + "ERROR! Var missing",
-                        color=colorflag,
-                        ha="left",
-                        va="center",
-                    )
+                mfile_data.data[d[0]].get_scan(-1)
+                axis.text(
+                    eqpos, -i, "=ERROR! Var missing", color=col, ha="left", va="center"
+                )
         else:
-            dat = data[i][0]
-            if isinstance(dat, str):
-                value = dat
-            else:
-                value = "{:.4g}".format(data[i][0])
-            axis.text(
-                eqpos,
-                -i,
-                "= " + value + " " + data[i][2],
-                color=colorflag,
-                ha="left",
-                va="center",
-            )
+            dat = d[0] if isinstance(d[0], str) else f"{d[0]:.4g}"
+            axis.text(eqpos, -i, f"= {dat} {d[2]}", color=col, ha="left", va="center")
 
 
 def plot_header(axis, mfile_data, scan):
@@ -1920,94 +1813,46 @@ def plot_header(axis, mfile_data, scan):
     # Load dicts from dicts JSON file
     dicts = get_dicts()
 
-    xmin = 0
-    xmax = 1
-    ymin = -16
-    ymax = 1
-
-    axis.set_ylim([ymin, ymax])
-    axis.set_xlim([xmin, xmax])
+    axis.set_ylim([-16, 1])
+    axis.set_xlim([0, 1])
     axis.set_axis_off()
     axis.set_autoscaley_on(False)
     axis.set_autoscalex_on(False)
+    minmax = str(abs(int(mfile_data.data["minmax"].get_scan(-1))))
 
     data2 = [
-        ("!" + str(mfile_data.data["runtitle"].get_scan(-1)), "Run title", ""),
-        ("!" + str(mfile_data.data["procver"].get_scan(-1)), "PROCESS Version", ""),
-        ("!" + mfile_data.data["date"].get_scan(-1), "Date:", ""),
-        ("!" + mfile_data.data["time"].get_scan(-1), "Time:", ""),
-        ("!" + mfile_data.data["username"].get_scan(-1), "User:", ""),
-        (
-            "!"
-            + dicts["DICT_OPTIMISATION_VARS"][
-                str(abs(int(mfile_data.data["minmax"].get_scan(-1))))
-            ],
-            "Optimising:",
-            "",
-        ),
+        (f"!{mfile_data.data['runtitle'].get_scan(-1)!s}", "Run title", ""),
+        (f"!{mfile_data.data['procver'].get_scan(-1)!s}", "PROCESS Version", ""),
+        (f"!{mfile_data.data['date'].get_scan(-1)}", "Date:", ""),
+        (f"!{mfile_data.data['time'].get_scan(-1)}", "Time:", ""),
+        (f"!{mfile_data.data['username'].get_scan(-1)}", "User:", ""),
+        (f"!{dicts['DICT_OPTIMISATION_VARS'][minmax]}", "Optimising:", ""),
     ]
 
-    H = mfile_data.data["fimp(01)"].get_scan(scan)
-    He = mfile_data.data["fimp(02)"].get_scan(scan)
-    Be = mfile_data.data["fimp(03)"].get_scan(scan)
-    C = mfile_data.data["fimp(04)"].get_scan(scan)
-    N = mfile_data.data["fimp(05)"].get_scan(scan)
-    O = mfile_data.data["fimp(06)"].get_scan(scan)  # noqa: E741
-    Ne = mfile_data.data["fimp(07)"].get_scan(scan)
-    Si = mfile_data.data["fimp(08)"].get_scan(scan)
-    Ar = mfile_data.data["fimp(09)"].get_scan(scan)
-    Fe = mfile_data.data["fimp(10)"].get_scan(scan)
-    Ni = mfile_data.data["fimp(11)"].get_scan(scan)
-    Kr = mfile_data.data["fimp(12)"].get_scan(scan)
-    Xe = mfile_data.data["fimp(13)"].get_scan(scan)
-    W = mfile_data.data["fimp(14)"].get_scan(scan)
+    fimp_data = {
+        "D + T": mfile_data.data["fimp(01)"].get_scan(scan),
+        "He": mfile_data.data["fimp(02)"].get_scan(scan),
+        "Be": mfile_data.data["fimp(03)"].get_scan(scan),
+        "C": mfile_data.data["fimp(04)"].get_scan(scan),
+        "N": mfile_data.data["fimp(05)"].get_scan(scan),
+        "O": mfile_data.data["fimp(06)"].get_scan(scan),
+        "Ne": mfile_data.data["fimp(07)"].get_scan(scan),
+        "Si": mfile_data.data["fimp(08)"].get_scan(scan),
+        "Ar": mfile_data.data["fimp(09)"].get_scan(scan),
+        "Fe": mfile_data.data["fimp(10)"].get_scan(scan),
+        "Ni": mfile_data.data["fimp(11)"].get_scan(scan),
+        "Kr": mfile_data.data["fimp(12)"].get_scan(scan),
+        "Xe": mfile_data.data["fimp(13)"].get_scan(scan),
+        "W": mfile_data.data["fimp(14)"].get_scan(scan),
+    }
 
     data = [("", "", ""), ("", "", "")]
-    count = 0
 
-    data = data + [(H, "D + T", "")]
-    count += 1
+    for no, (name, imp) in enumerate(fimp_data.items()):
+        if no < 2 or imp > 1e-10:
+            data += [(imp, name, "")]
 
-    data = data + [(He, "He", "")]
-    count += 1
-    if Be > 1e-10:
-        data = data + [(Be, "Be", "")]
-        count += +1
-    if C > 1e-10:
-        data = data + [(C, "C", "")]
-        count += 1
-    if N > 1e-10:
-        data = data + [(N, "N", "")]
-        count += 1
-    if O > 1e-10:
-        data = data + [(O, "O", "")]
-        count += 1
-    if Ne > 1e-10:
-        data = data + [(Ne, "Ne", "")]
-        count += 1
-    if Si > 1e-10:
-        data = data + [(Si, "Si", "")]
-        count += 1
-    if Ar > 1e-10:
-        data = data + [(Ar, "Ar", "")]
-        count += 1
-    if Fe > 1e-10:
-        data = data + [(Fe, "Fe", "")]
-        count += 1
-    if Ni > 1e-10:
-        data = data + [(Ni, "Ni", "")]
-        count += 1
-    if Kr > 1e-10:
-        data = data + [(Kr, "Kr", "")]
-        count += 1
-    if Xe > 1e-10:
-        data = data + [(Xe, "Xe", "")]
-        count += 1
-    if W > 1e-10:
-        data = data + [(W, "W", "")]
-        count += 1
-
-    if count > 11:
+    if len(data) - 2 > 11:
         data = [("", "", ""), ("", "", ""), ("", "More than 11 impurities", "")]
     else:
         axis.text(-0.05, -6.4, "Plasma composition:", ha="left", va="center")
@@ -2018,7 +1863,7 @@ def plot_header(axis, mfile_data, scan):
             ha="left",
             va="center",
         )
-    data2 = data2 + data
+    data2 += data
 
     axis.text(-0.05, -12.6, "Colour Legend:", ha="left", va="center")
     axis.text(0.0, -13.4, "ITR", color="red", ha="left", va="center")
@@ -2027,7 +1872,7 @@ def plot_header(axis, mfile_data, scan):
     plot_info(axis, data2, mfile_data, scan)
 
 
-def plot_geometry_info(axis, mfile_data, scan):
+def plot_geometry_info(axis, mfile_data, plot_data, scan):
     """Function to plot geometry info
 
     Arguments:
@@ -2036,24 +1881,12 @@ def plot_geometry_info(axis, mfile_data, scan):
         scan --> scan number to use
 
     """
-    xmin = 0
-    xmax = 1
-    ymin = -16
-    ymax = 1
-
     axis.text(-0.05, 1, "Geometry:", ha="left", va="center")
-    axis.set_ylim([ymin, ymax])
-    axis.set_xlim([xmin, xmax])
+    axis.set_ylim([-16, 1])
+    axis.set_xlim([0, 1])
     axis.set_axis_off()
     axis.set_autoscaley_on(False)
     axis.set_autoscalex_on(False)
-
-    in_blanket_thk = mfile_data.data["shldith"].get_scan(scan) + mfile_data.data[
-        "blnkith"
-    ].get_scan(scan)
-    out_blanket_thk = mfile_data.data["shldoth"].get_scan(scan) + mfile_data.data[
-        "blnkoth"
-    ].get_scan(scan)
 
     data = [
         ("rmajor", "$R_0$", "m"),
@@ -2064,8 +1897,8 @@ def plot_geometry_info(axis, mfile_data, scan):
         ("sarea", "Surface area", "m$^2$"),
         ("vol", "Plasma volume", "m$^3$"),
         ("n_tf", "No. of TF coils", ""),
-        (in_blanket_thk, "inboard blanket+shield", "m"),
-        (out_blanket_thk, "ouboard blanket+shield", "m"),
+        (plot_data.shldith + plot_data.blnkith, "inboard blanket+shield", "m"),
+        (plot_data.shldoth + plot_data.blnkoth, "ouboard blanket+shield", "m"),
         ("powfmw", "Fusion power", "MW"),
         ("bigq", "$Q$", ""),
         ("", "", ""),
@@ -2083,14 +1916,9 @@ def plot_physics_info(axis, mfile_data, scan):
         scan --> scan number to use
 
     """
-    xmin = 0
-    xmax = 1
-    ymin = -16
-    ymax = 1
-
     axis.text(-0.05, 1, "Physics:", ha="left", va="center")
-    axis.set_ylim([ymin, ymax])
-    axis.set_xlim([xmin, xmax])
+    axis.set_ylim([-16, 1])
+    axis.set_xlim([0, 1])
     axis.set_axis_off()
     axis.set_autoscaley_on(False)
     axis.set_autoscalex_on(False)
@@ -2098,21 +1926,17 @@ def plot_physics_info(axis, mfile_data, scan):
     nong = mfile_data.data["dnla"].get_scan(scan) / mfile_data.data[
         "dlimit(7)"
     ].get_scan(scan)
-
-    dnz = mfile_data.data["dnz"].get_scan(scan) / mfile_data.data["dene"].get_scan(scan)
+    dene = mfile_data.data["dene"].get_scan(scan)
+    dnz = mfile_data.data["dnz"].get_scan(scan) / dene
 
     tepeak = mfile_data.data["te0"].get_scan(scan) / mfile_data.data["te"].get_scan(scan)
-
-    nepeak = mfile_data.data["ne0"].get_scan(scan) / mfile_data.data["dene"].get_scan(
-        scan
-    )
+    nepeak = mfile_data.data["ne0"].get_scan(scan) / dene
 
     # Assume Martin scaling if pthresh is not printed
     # Accounts for pthresh not being written prior to issue #679 and #680
-    if "plhthresh" in mfile_data.data.keys():
-        pthresh = mfile_data.data["plhthresh"].get_scan(scan)
-    else:
-        pthresh = mfile_data.data["pthrmw(6)"].get_scan(scan)
+    pthresh = mfile_data.data[
+        "plhthresh" if "plhthresh" in mfile_data.data else "pthrmw(6)"
+    ].get_scan(scan)
 
     data = [
         ("plascur/1d6", "$I_p$", "MA"),
@@ -2147,31 +1971,26 @@ def plot_magnetics_info(axis, mfile_data, scan):
         scan --> scan number to use
 
     """
-
     # Load dicts from dicts JSON file
     dicts = get_dicts()
 
     # Check for Copper magnets
-    if "i_tf_sup" in mfile_data.data.keys():
-        i_tf_sup = int(mfile_data.data["i_tf_sup"].get_scan(scan))
-    else:
-        i_tf_sup = int(1)
-
-    xmin = 0
-    xmax = 1
-    ymin = -16
-    ymax = 1
+    i_tf_sup = (
+        int(mfile_data.data["i_tf_sup"].get_scan(scan))
+        if "i_tf_sup" in mfile_data.data
+        else 1
+    )
 
     axis.text(-0.05, 1, "Coil currents etc:", ha="left", va="center")
-    axis.set_ylim([ymin, ymax])
-    axis.set_xlim([xmin, xmax])
+    axis.set_ylim([-16, 1])
+    axis.set_xlim([0, 1])
     axis.set_axis_off()
     axis.set_autoscaley_on(False)
     axis.set_autoscalex_on(False)
 
     # Number of coils (1 is OH coil)
     number_of_coils = 0
-    for item in mfile_data.data.keys():
+    for item in mfile_data.data:
         if "rpf[" in item:
             number_of_coils += 1
 
@@ -2180,8 +1999,8 @@ def plot_magnetics_info(axis, mfile_data, scan):
         if i % 2 != 0:
             pf_info.append(
                 (
-                    mfile_data.data["ric[{:01}]".format(i)].get_scan(scan),
-                    "PF {}".format(i),
+                    mfile_data.data[f"ric[{i:01}]"].get_scan(scan),
+                    f"PF {i}",
                 )
             )
 
@@ -2194,57 +2013,62 @@ def plot_magnetics_info(axis, mfile_data, scan):
 
     tburn = mfile_data.data["tburn"].get_scan(scan) / 3600.0
 
-    if "i_tf_bucking" in mfile_data.data.keys():
-        i_tf_bucking = int(mfile_data.data["i_tf_bucking"].get_scan(scan))
-    else:
-        i_tf_bucking = int(1)
+    i_tf_bucking = (
+        int(mfile_data.data["i_tf_bucking"].get_scan(scan))
+        if "i_tf_bucking" in mfile_data.data
+        else 1
+    )
 
     # Get superconductor material (i_tf_sc_mat)
     # If i_tf_sc_mat not present, assume resistive
-    if "i_tf_sc_mat" in mfile_data.data.keys():
-        i_tf_sc_mat = int(mfile_data.data["i_tf_sc_mat"].get_scan(scan))
-    else:
-        i_tf_sc_mat = int(0)
+    i_tf_sc_mat = (
+        int(mfile_data.data["i_tf_sc_mat"].get_scan(scan))
+        if "i_tf_sc_mat" in mfile_data.data
+        else 0
+    )
 
-    if i_tf_sc_mat > 0:
-        tftype = dicts["DICT_TF_TYPE"][
-            str(int(mfile_data.data["i_tf_sc_mat"].get_scan(scan)))
-        ]
-    else:
-        tftype = "Resistive"
+    tftype = (
+        dicts["DICT_TF_TYPE"][str(int(mfile_data.data["i_tf_sc_mat"].get_scan(scan)))]
+        if i_tf_sc_mat > 0
+        else "Resistive"
+    )
 
     vssoft = mfile_data.data["vsres"].get_scan(scan) + mfile_data.data["vsind"].get_scan(
         scan
     )
 
-    sig_case = 1.0e-6 * mfile_data.data[
-        "sig_tf_tresca_max({})".format(i_tf_bucking)
-    ].get_scan(scan)
+    sig_case = 1.0e-6 * mfile_data.data[f"sig_tf_tresca_max({i_tf_bucking})"].get_scan(
+        scan
+    )
     sig_cond = 1.0e-6 * mfile_data.data[
-        "sig_tf_tresca_max({})".format(i_tf_bucking + 1)
+        f"sig_tf_tresca_max({i_tf_bucking + 1})"
     ].get_scan(scan)
     alstrtf = 1.0e-6 * mfile_data.data["alstrtf"].get_scan(scan)
 
+    data = [
+        (pf_info[0][0], pf_info[0][1], "MA"),
+        (pf_info[1][0], pf_info[1][1], "MA"),
+        (pf_info_3_a, pf_info_3_b, "MA"),
+        (vssoft, "Startup flux swing", "Wb"),
+        ("vstot", "Available flux swing", "Wb"),
+        (tburn, "Burn time", "hrs"),
+        ("", "", ""),
+        (f"#TF coil type is {tftype}", "", ""),
+    ]
+    data2 = [
+        (sig_cond, "TF Cond max TRESCA stress", "MPa"),
+        (sig_case, "TF Case max TRESCA stress", "MPa"),
+        (alstrtf, "Allowable stress", "Pa"),
+    ]
     if i_tf_sup == 1:
-        data = [
-            (pf_info[0][0], pf_info[0][1], "MA"),
-            (pf_info[1][0], pf_info[1][1], "MA"),
-            (pf_info_3_a, pf_info_3_b, "MA"),
-            (vssoft, "Startup flux swing", "Wb"),
-            ("vstot", "Available flux swing", "Wb"),
-            (tburn, "Burn time", "hrs"),
-            ("", "", ""),
-            ("#TF coil type is {}".format(tftype), "", ""),
+        data += [
             ("bmaxtfrp", "Peak field at conductor (w. rip.)", "T"),
-            ("iooic", r"I/I$_{\mathrm{crit}}$", ""),
+            *data2,
+            ("iooic", "I/I$_{\\mathrm{crit}}$", ""),
             ("tmargtf", "TF Temperature margin", "K"),
             ("tmargoh", "CS Temperature margin", "K"),
-            (sig_cond, "TF Cond max TRESCA stress", "MPa"),
-            (sig_case, "TF Case max TRESCA stress", "MPa"),
-            (alstrtf, "Allowable stress", "Pa"),
             ("whttf/n_tf", "Mass per TF coil", "kg"),
         ]
-
     else:
         n_tf = mfile_data.data["n_tf"].get_scan(scan)
         prescp = 1.0e-6 * mfile_data.data["prescp"].get_scan(scan)
@@ -2252,22 +2076,12 @@ def plot_magnetics_info(axis, mfile_data, scan):
         pres_joints = 1.0e-6 * mfile_data.data["pres_joints"].get_scan(scan)
         fcoolcp = 100.0 * mfile_data.data["fcoolcp"].get_scan(scan)
 
-        data = [
-            (pf_info[0][0], pf_info[0][1], "MA"),
-            (pf_info[1][0], pf_info[1][1], "MA"),
-            (pf_info_3_a, pf_info_3_b, "MA"),
-            (vssoft, "Startup flux swing", "Wb"),
-            ("vstot", "Available flux swing", "Wb"),
-            (tburn, "Burn time", "hrs"),
-            ("", "", ""),
-            ("#TF coil type is {}".format(tftype), "", ""),
+        data += [
             ("bmaxtf", "Peak field at conductor (w. rip.)", "T"),
             ("ritfc", "TF coil currents sum", "A"),
             ("", "", ""),
             ("#TF coil forces/stresses", "", ""),
-            (sig_cond, "TF conductor max TRESCA stress", "MPa"),
-            (sig_case, "TF bucking max TRESCA stress", "MPa"),
-            (alstrtf, "conductor Allowable stress", "Pa"),
+            *data2,
             (fcoolcp, "CP cooling fraction", "%"),
             ("vcool", "Maximum coolant flow speed", "m.s$^{-1}$"),
             (prescp, "CP Resisitive heating", "MW"),
@@ -2278,7 +2092,18 @@ def plot_magnetics_info(axis, mfile_data, scan):
     plot_info(axis, data, mfile_data, scan)
 
 
-def plot_power_info(axis, mfile_data, scan):
+def plot_power_info(
+    axis,
+    mfile_data,
+    scan,
+    pgrossmw,
+    pthermmw,
+    htpmw,
+    pnetelmw,
+    powfmw,
+    crypmw,
+    ipedestal,
+):
     """Function to plot power info
 
     Arguments:
@@ -2287,42 +2112,14 @@ def plot_power_info(axis, mfile_data, scan):
         scan --> scan number to use
 
     """
-
-    xmin = 0
-    xmax = 1
-    ymin = -16
-    ymax = 1
-
     axis.text(-0.05, 1, "Power flows:", ha="left", va="center")
-    axis.set_ylim([ymin, ymax])
-    axis.set_xlim([xmin, xmax])
+    axis.set_ylim([-16, 1])
+    axis.set_xlim([0, 1])
     axis.set_axis_off()
     axis.set_autoscaley_on(False)
     axis.set_autoscalex_on(False)
 
-    gross_eff = 100.0 * (
-        mfile_data.data["pgrossmw"].get_scan(scan)
-        / mfile_data.data["pthermmw"].get_scan(scan)
-    )
-
-    net_eff = 100.0 * (
-        (
-            mfile_data.data["pgrossmw"].get_scan(scan)
-            - mfile_data.data["htpmw"].get_scan(scan)
-        )
-        / (
-            mfile_data.data["pthermmw"].get_scan(scan)
-            - mfile_data.data["htpmw"].get_scan(scan)
-        )
-    )
-
-    plant_eff = 100.0 * (
-        mfile_data.data["pnetelmw"].get_scan(scan)
-        / mfile_data.data["powfmw"].get_scan(scan)
-    )
-
     # Define appropriate pedestal and impurity parameters
-    coredescription = ("coreradius", "Normalised radius of 'core' region", "")
     if ipedestal == 1:
         ped_height = ("neped", "Electron density at pedestal", "m$^{-3}$")
         ped_pos = ("rhopedn", "r/a at density pedestal", "")
@@ -2330,11 +2127,9 @@ def plot_power_info(axis, mfile_data, scan):
         ped_height = ("", "No pedestal model used", "")
         ped_pos = ("", "", "")
 
-    crypmw = mfile_data.data["crypmw"].get_scan(scan)
-
     data = [
         ("wallmw", "Nominal neutron wall load", "MW m$^{-2}$"),
-        coredescription,
+        ("coreradius", "Normalised radius of 'core' region", ""),
         ped_height,
         ped_pos,
         ("ralpne", "Helium fraction", ""),
@@ -2346,12 +2141,12 @@ def plot_power_info(axis, mfile_data, scan):
         ("pdivt", "Power to divertor", "MW"),
         ("divlife", "Divertor life", "years"),
         ("pthermmw", "Primary (high grade) heat", "MW"),
-        (gross_eff, "Gross cycle efficiency", "%"),
-        (net_eff, "Net cycle efficiency", "%"),
+        (100.0 * pgrossmw / pthermmw, "Gross cycle efficiency", "%"),
+        (100.0 * (pgrossmw - htpmw) / (pthermmw - htpmw), "Net cycle efficiency", "%"),
         ("pgrossmw", "Gross electric power", "MW"),
         ("pnetelmw", "Net electric power", "MW"),
         (
-            plant_eff,
+            100.0 * pnetelmw / powfmw,
             "Fusion-to-electric efficiency "
             + r"$\frac{P_{\mathrm{e,net}}}{P_{\mathrm{fus}}}$",
             "%",
@@ -2359,6 +2154,12 @@ def plot_power_info(axis, mfile_data, scan):
     ]
 
     plot_info(axis, data, mfile_data, scan)
+
+
+class CurrentDrive(Enum):
+    NBI = auto()
+    ECRH = auto()
+    EBW = auto()
 
 
 def plot_current_drive_info(axis, mfile_data, scan):
@@ -2370,78 +2171,61 @@ def plot_current_drive_info(axis, mfile_data, scan):
         scan --> scan number to use
 
     """
-
-    xmin = 0
-    xmax = 1
-    ymin = -16
-    ymax = 1
     iefrf = mfile_data.data["iefrf"].get_scan(scan)
-    nbi = False
-    ecrh = False
-    ebw = False
-    if (iefrf == 5) or (iefrf == 8):
-        nbi = True
-        axis.text(-0.05, 1, "Neutral Beam Current Drive:", ha="left", va="center")
-    if (iefrf == 3) or (iefrf == 7) or (iefrf == 10) or (iefrf == 11):
-        ecrh = True
-        axis.text(-0.05, 1, "Electron Cyclotron Current Drive:", ha="left", va="center")
-    if iefrf == 12:
-        ebw = True
-        axis.text(-0.05, 1, "Electron Bernstein Wave Drive:", ha="left", va="center")
-    if (iefrf == 1) or (iefrf == 2) or (iefrf == 4) or (iefrf == 6) or (iefrf == 9):
-        print(
+    if iefrf in (5, 8):
+        drive_type = CurrentDrive.NBI
+        title = "Neutral Beam Current Drive:"
+    elif iefrf in (3, 7, 10, 11):
+        drive_type = CurrentDrive.ECRH
+        title = "Electron Cyclotron Current Drive:"
+    elif iefrf == 12:
+        drive_type = CurrentDrive.EBW
+        title = "Electron Bernstein Wave Drive:"
+    elif iefrf in (1, 2, 4, 6, 9):
+        raise NotImplementedError(
             "Options 1, 2, 4, 6 and 9 not implemented yet in this python script plot_proc.py\n"
+            "NEEDS TO BE IMPLEMENTED in plot_current_drive_info subroutine!!\n"
         )
-        print("NEEDS TO BE IMPLEMENTED in plot_current_drive_info subroutine!!\n")
+    else:
+        raise ValueError(f"Unknown iefrf value: {iefrf}")
+    axis.text(-0.05, 1, title, ha="left", va="center")
 
-    if "iefrffix" in mfile_data.data.keys():
-        secondary_heating = ""
+    if "iefrffix" in mfile_data.data:
         iefrffix = mfile_data.data["iefrffix"].get_scan(scan)
 
-        if (iefrffix == 5) or (iefrffix == 8):
+        if iefrffix in (5, 8):
             secondary_heating = "NBI"
-        if (iefrffix == 3) or (iefrffix == 7) or (iefrffix == 10) or (iefrffix == 11):
+        elif iefrffix in (3, 7, 10, 11):
             secondary_heating = "ECH"
-        if iefrffix == 12:
+        elif iefrffix == 12:
             secondary_heating = "EBW"
-        if (
-            (iefrffix == 1)
-            or (iefrffix == 2)
-            or (iefrffix == 4)
-            or (iefrffix == 6)
-            or (iefrffix == 9)
-        ):
-            print(
+        elif iefrffix in (1, 2, 4, 6, 9):
+            raise NotImplementedError(
                 "Options 1, 2, 4, 6 and 9 not implemented yet in this python script plot_proc.py\n"
+                "NEEDS TO BE IMPLEMENTED in plot_current_drive_info subroutine!!\n"
             )
-            print("NEEDS TO BE IMPLEMENTED in plot_current_drive_info subroutine!!\n")
+        else:
+            raise ValueError(f"Unknown iefrffix value {iefrffix}")
 
-    axis.set_ylim([ymin, ymax])
-    axis.set_xlim([xmin, xmax])
+    axis.set_ylim([-16, 1])
+    axis.set_xlim([0, 1])
     axis.set_axis_off()
     axis.set_autoscaley_on(False)
     axis.set_autoscalex_on(False)
 
+    rmajor = mfile_data.data["rmajor"].get_scan(scan)
     pinjie = mfile_data.data["pinjmw"].get_scan(scan)
     pinjmwfix = mfile_data.data["pinjmwfix"].get_scan(scan)
     pdivt = mfile_data.data["pdivt"].get_scan(scan)
-    pdivr = pdivt / mfile_data.data["rmajor"].get_scan(scan)
+    pdivr = pdivt / rmajor
 
-    pdivnr = (
-        1.0e20
-        * mfile_data.data["pdivt"].get_scan(scan)
-        / (
-            mfile_data.data["rmajor"].get_scan(scan)
-            * mfile_data.data["dene"].get_scan(scan)
-        )
-    )
+    pdivnr = 1.0e20 * pdivr / mfile_data.data["dene"].get_scan(scan)
 
     # Assume Martin scaling if pthresh is not printed
     # Accounts for pthresh not being written prior to issue #679 and #680
-    if "plhthresh" in mfile_data.data.keys():
-        pthresh = mfile_data.data["plhthresh"].get_scan(scan)
-    else:
-        pthresh = mfile_data.data["pthrmw(6)"].get_scan(scan)
+    pthresh = mfile_data.data[
+        "plhthresh" if "plhthresh" in mfile_data.data else "pthrmw(6)"
+    ].get_scan(scan)
     flh = pdivt / pthresh
 
     powerht = mfile_data.data["powerht"].get_scan(scan)
@@ -2450,89 +2234,43 @@ def plot_current_drive_info(axis, mfile_data, scan):
     hfact = mfile_data.data["hfact"].get_scan(scan)
     hstar = hfact * (powerht / (powerht + psync + pbrem)) ** 0.31
 
-    if ecrh:
-        data = [
-            (pinjie, "Steady state auxiliary power", "MW"),
-            ("pheat", "Power for heating only", "MW"),
-            ("bootipf", "Bootstrap fraction", ""),
-            ("faccd", "Auxiliary fraction", ""),
-            ("facoh", "Inductive fraction", ""),
-            ("powerht", "Plasma heating used for H factor", "MW"),
-            (pdivr, r"$\frac{P_{\mathrm{div}}}{R_{0}}$", "MW m$^{-1}$"),
-            (
-                pdivnr,
-                r"$\frac{P_{\mathrm{div}}}{<n> R_{0}}$",
-                r"$\times 10^{-20}$ MW m$^{2}$",
-            ),
-            (flh, r"$\frac{P_{\mathrm{div}}}{P_{\mathrm{LH}}}$", ""),
-            (hstar, "H* (non-rad. corr.)", ""),
-        ]
-        if "iefrffix" in mfile_data.data.keys():
-            data.insert(
-                1, ("pinjmwfix", f"{secondary_heating} secondary auxiliary power", "MW")
-            )
-            data[0] = ((pinjie - pinjmwfix), "Primary auxiliary power", "MW")
-            data.insert(2, (pinjie, "Total auxillary power", "MW"))
+    data = [
+        (pinjie, "Steady state auxiliary power", "MW"),
+        ("pheat", "Power for heating only", "MW"),
+        ("bootipf", "Bootstrap fraction", ""),
+        ("faccd", "Auxiliary fraction", ""),
+        ("facoh", "Inductive fraction", ""),
+    ]
 
-    if nbi:
-        data = [
-            (pinjie, "Steady state auxiliary power", "MW"),
-            ("pheat", "Power for heating only", "MW"),
-            ("bootipf", "Bootstrap fraction", ""),
-            ("faccd", "Auxiliary fraction", ""),
-            ("facoh", "Inductive fraction", ""),
+    if drive_type is CurrentDrive.NBI:
+        data += [
             ("gamnb", "NB gamma", "$10^{20}$ A W$^{-1}$ m$^{-2}$"),
-            ("enbeam", "NB energy", "keV"),
             ("powerht", "Plasma heating used for H factor", "MW"),
-            (pdivr, r"$\frac{P_{\mathrm{div}}}{R_{0}}$", "MW m$^{-1}$"),
-            (
-                pdivnr,
-                r"$\frac{P_{\mathrm{div}}}{<n> R_{0}}$",
-                r"$\times 10^{-20}$ MW m$^{2}$",
-            ),
-            (flh, r"$\frac{P_{\mathrm{div}}}{P_{\mathrm{LH}}}$", ""),
-            (hstar, "H* (non-rad. corr.)", ""),
         ]
-        if "iefrffix" in mfile_data.data.keys():
-            data.insert(
-                1, ("pinjmwfix", f"{secondary_heating} secondary auxiliary power", "MW")
-            )
-            data[0] = ((pinjie - pinjmwfix), "Primary auxiliary power", "MW")
-            data.insert(2, (pinjie, "Total auxillary power", "MW"))
 
-    if ebw:
-        data = [
-            (pinjie, "Steady state auxiliary power", "MW"),
-            ("pheat", "Power for heating only", "MW"),
-            ("bootipf", "Bootstrap fraction", ""),
-            ("faccd", "Auxiliary fraction", ""),
-            ("facoh", "Inductive fraction", ""),
-            ("powerht", "Plasma heating used for H factor", "MW"),
-            (pdivr, r"$\frac{P_{\mathrm{div}}}{R_{0}}$", "MW m$^{-1}$"),
-            (
-                pdivnr,
-                r"$\frac{P_{\mathrm{div}}}{<n> R_{0}}$",
-                r"$\times 10^{-20}$ MW m$^{2}$",
-            ),
-            (flh, r"$\frac{P_{\mathrm{div}}}{P_{\mathrm{LH}}}$", ""),
-            (hstar, "H* (non-rad. corr.)", ""),
-        ]
-        if "iefrffix" in mfile_data.data.keys():
-            data.insert(
-                1, ("pinjmwfix", f"{secondary_heating} secondary auxiliary power", "MW")
-            )
-            data[0] = ((pinjie - pinjmwfix), "Primary auxiliary power", "MW")
-            data.insert(2, (pinjie, "Total auxillary power", "MW"))
+    data += [
+        ("powerht", "Plasma heating used for H factor", "MW"),
+        (pdivr, r"$\frac{P_{\mathrm{div}}}{R_{0}}$", "MW m$^{-1}$"),
+        (pdivnr, r"$\frac{P_{\mathrm{div}}}{<n> R_{0}}$", r"$\times 10^{-20}$ MW m$^{2}$"),
+        (flh, r"$\frac{P_{\mathrm{div}}}{P_{\mathrm{LH}}}$", ""),
+        (hstar, "H* (non-rad. corr.)", ""),
+    ]
+
+    if "iefrffix" in mfile_data.data:
+        data.insert(
+            1, ("pinjmwfix", f"{secondary_heating} secondary auxiliary power", "MW")
+        )
+        data[0] = (pinjie - pinjmwfix, "Primary auxiliary power", "MW")
+        data.insert(2, (pinjie, "Total auxillary power", "MW"))
 
     coe = mfile_data.data["coe"].get_scan(scan)
-    if coe == 0.0:
-        data.append(("", "", ""))
-        data.append(("#Costs", "", ""))
-        data.append(("", "Cost output not selected", ""))
-    else:
-        data.append(("", "", ""))
-        data.append(("#Costs", "", ""))
-        data.append((coe, "Cost of electricity", r"\$/MWh"))
+    data.append(("", "", ""))
+    data.append(("#Costs", "", ""))
+    data.append(
+        ("", "Cost output not selected", "")
+        if coe == 0.0
+        else (coe, "Cost of electricity", r"\$/MWh")
+    )
 
     plot_info(axis, data, mfile_data, scan)
 
@@ -2540,11 +2278,11 @@ def plot_current_drive_info(axis, mfile_data, scan):
 def main_plot(
     fig1,
     fig2,
-    m_file_data,
     plot_data,
+    colour_dict,
+    m_file_data,
     scan,
-    plasmod=False,
-    imp="../data/lz_non_corona_14_elements/",
+    imp: Union[Path, str] = "../data/lz_non_corona_14_elements/",
     demo_ranges=False,
 ):
     """Function to create radial and vertical build plot on given figure.
@@ -2554,33 +2292,35 @@ def main_plot(
       fig2 --> figure object to add plot to.
       m_file_data --> MFILE.DAT data to read
       scan --> scan to read from MFILE.DAT
-      plasmod --> plasmod data or not
       imp --> path to impurity data
     """
-
     # Checking the impurity data folder
     # Get path to impurity data dir
     # TODO use Path objects throughout module, not strings
     with resources.path(
         "process.data.lz_non_corona_14_elements", "Ar_lz_tau.dat"
     ) as imp_path:
-        data_folder = str(imp_path.parent) + "/"
+        data_folder = imp_path.parent
 
-    if os.path.isdir(data_folder):
+    imp = Path(imp)
+    if data_folder.is_dir():
         imp = data_folder
-    else:
+    elif not imp.is_dir():
         print(
-            "\033[91m Warning : Impossible to recover impurity data, try running the macro in the main/utility folder"
+            "\033[91m Warning : Impossible to recover impurity data,"
+            " try running the macro in the main/utility folder\n"
+            "          -> No impurity plot done\033[0m"
         )
-        print("          -> No impurity plot done\033[0m")
 
     # Plot poloidal cross-section
     plot_1 = fig2.add_subplot(221, aspect="equal")
-    poloidal_cross_section(plot_1, m_file_data, scan, demo_ranges)
+    poloidal_cross_section(plot_1, m_file_data, plot_data, scan, demo_ranges)
 
     # Plot toroidal cross-section
     plot_2 = fig2.add_subplot(222, aspect="equal")
-    toroidal_cross_section(plot_2, m_file_data, scan, demo_ranges)
+    toroidal_cross_section(
+        plot_2, m_file_data, plot_data, colour_dict, scan, demo_ranges
+    )
 
     # Plot color key
     plot_3 = fig2.add_subplot(241)
@@ -2588,29 +2328,16 @@ def main_plot(
 
     # Plot density profiles
     plot_4 = fig2.add_subplot(234)  # , aspect= 0.05)
-    if plasmod:
-        plot_plasmod_nprofile(plot_4, demo_ranges)
-    else:
-        plot_nprofile(plot_4, demo_ranges)
+    plot_nprofile(plot_4, plot_data, demo_ranges)
 
     # Plot temperature profiles
     plot_5 = fig2.add_subplot(235)  # , aspect= 1/35)
-    if plasmod:
-        plot_plasmod_tprofile(plot_5, demo_ranges)
-    else:
-        plot_tprofile(plot_5, demo_ranges)
+    plot_tprofile(plot_5, plot_data, demo_ranges)
 
-    if plasmod:
-        plot_6 = fig2.add_subplot(236)  # , aspect=1/10)
-        plot_plasmod_qprofile(plot_6, demo_ranges)
-    else:
+    if imp.is_dir():
         # plot_qprofile(plot_6)
         plot_6 = fig2.add_subplot(236)  # , aspect=2)
-        if os.path.isdir(imp):
-            plot_radprofile(plot_6, m_file_data, scan, imp, demo_ranges)
-
-    # plot_7 =
-    # plot_radprofile(plot_7)
+        plot_radprofile(plot_6, m_file_data, plot_data, scan, imp, demo_ranges)
 
     # Setup params for text plots
     plt.rcParams.update({"font.size": 8})
@@ -2621,7 +2348,7 @@ def main_plot(
 
     # Geometry
     plot_2 = fig1.add_subplot(232)
-    plot_geometry_info(plot_2, m_file_data, scan)
+    plot_geometry_info(plot_2, m_file_data, plot_data, scan)
 
     # Physics
     plot_3 = fig1.add_subplot(233)
@@ -2633,7 +2360,7 @@ def main_plot(
 
     # power/flow economics
     plot_5 = fig1.add_subplot(235)
-    plot_power_info(plot_5, m_file_data, scan)
+    plot_power_info(plot_5, m_file_data, scan, **plot_data.power_info())
 
     # Current drive
     plot_6 = fig1.add_subplot(236)
@@ -2641,17 +2368,19 @@ def main_plot(
     fig1.subplots_adjust(wspace=0.25)
 
 
-def save_plots(m_file_data, scan):
-    """Function to recreate and save individual plots."""
-
+def _create_fig_save(figno, aspect: Union[Literal["equal", "auto"], float] = "equal"):
     fig = plt.figure(figsize=(12, 9), dpi=80)
+    return fig, fig.add_subplot(figno, aspect=aspect)
 
+
+def save_plots(m_file_data, plot_data, colour_dict, demo_ranges, scan):
+    """Function to recreate and save individual plots."""
     # Plot poloidal cross-section
-    pol = fig.add_subplot(111, aspect="equal")
-    poloidal_cross_section(pol, m_file_data, scan)
+    fig, pol = _create_fig_save(111)
+    poloidal_cross_section(pol, m_file_data, plot_data, scan, False)
 
     # Plot TF coils
-    plot_tf_coils(pol, m_file_data, scan)
+    plot_tf_coils(pol, m_file_data, plot_data, scan)
 
     # Plot PF coils
     plot_pf_coils(pol, m_file_data, scan)
@@ -2659,26 +2388,22 @@ def save_plots(m_file_data, scan):
     fig.savefig("psection.svg", format="svg", dpi=1200)
 
     # Plot toroidal cross-section
-    fig = plt.figure(figsize=(12, 9), dpi=80)
-    tor = fig.add_subplot(222, aspect="equal")
-    toroidal_cross_section(tor)
+    fig, tor = _create_fig_save(222)
+    toroidal_cross_section(tor, m_file_data, plot_data, colour_dict, scan, False)
     fig.savefig("tsection.svg", format="svg", dpi=1200)
 
     # Plot color key
-    fig = plt.figure(figsize=(12, 9), dpi=80)
-    plot = fig.add_subplot(241)
+    fig, plot = _create_fig_save(241, aspect="auto")
     color_key(plot)
     fig.savefig("color_key.svg", format="svg", dpi=1200)
 
     # Plot profiles
-    fig = plt.figure(figsize=(12, 9), dpi=80)
-    plot = fig.add_subplot(223, aspect=0.05)
-    plot_nprofile(plot, False)
+    fig, plot = _create_fig_save(223, aspect=0.05)
+    plot_nprofile(plot, False, plot_data)
     fig.savefig("nprofile.svg", format="svg", dpi=1200)
 
-    fig = plt.figure(figsize=(12, 9), dpi=80)
-    plot = fig.add_subplot(224, aspect=1 / 35)
-    plot_tprofile(plot, False)
+    fig, plot = _create_fig_save(224, aspect=1 / 35)
+    plot_tprofile(plot, False, plot_data)
     fig.savefig("tprofile.svg", format="svg", dpi=1200)
 
 
@@ -2687,13 +2412,12 @@ def test(f):
 
     :param f: filename to test
     """
-
     try:
         with patch("bpdf.PdfPages"):
             main([f"-n=-1 -f={f}"])
         return True
     except Exception:
-        print("FTest failure for file : {}".format(f))
+        print(f"FTest failure for file : {f}")
         return False
 
 
@@ -2709,7 +2433,6 @@ def parse_args(args):
     parser = argparse.ArgumentParser(
         description="Produces a two page summary of the PROCESS MFILE output, using the MFILE.  "
         "For info contact michael.kovari@ukaea.uk or james.morris2@ukaea.uk.  "
-        "If using PLASMOD you must specify the profile file using -m."
     )
 
     parser.add_argument(
@@ -2718,13 +2441,6 @@ def parse_args(args):
         type=str,
         default="",
         help="specify input/output file path",
-    )
-    parser.add_argument(
-        "-m",
-        metavar="PLASMODFILE",
-        type=str,
-        default="",
-        help="specify PLASMOD profile file",
     )
 
     parser.add_argument("-s", "--show", help="show plot", action="store_true")
@@ -2738,169 +2454,12 @@ def parse_args(args):
         action="store_true",
     )
 
+    parser.add_argument(
+        "--svg",
+        help="Save plots individually as svg",
+        action="store_true",
+    )
     return parser.parse_args(args)
-
-
-@dataclass
-class PlotData:
-    bore: float
-    ohcth: float
-    gapoh: float
-    tfcth: float
-    gapds: float
-    ddwi: float
-    shldith: float
-    blnkith: float
-    fwith: float
-    scrapli: float
-    rmajor: float
-    rminor: float
-    scraplo: float
-    fwoth: float
-    blnkoth: float
-    shldoth: float
-    ddwi: float
-    gapsto: float
-    tfthko: float
-    rdewex: float
-    zdewex: float
-    ddwex: float
-
-    # Magnets related
-    n_tf: int
-    wwp1: Optional[float]
-    wwp2: Optional[float]
-    dr_tf_wp: Optional[float]
-    tinstf: Optional[float]
-    thkcas: Optional[float]
-    casthi: Optional[float]
-
-    nbshield: float
-    rtanbeam: float
-    rtanmax: float
-    beamwd: float
-
-    # Pedestal profile parameters
-    ipedestal: int
-    neped: int
-    nesep: int
-    rhopedn: float
-    rhopedt: float
-    tbeta: float
-    teped: float
-    tesep: float
-    alphan: float
-    alphat: float
-    ne0: float
-    te0: float
-
-    # Plasma
-    triang: float
-    alphaj: float
-    q0: float
-    q95: float
-    kallenbach_switch: int
-
-    # rad profile
-    ssync: float
-    bt: float
-    vol: float
-
-    upper: Dict
-    cumulative_upper: Dict
-
-    lower: Dict
-    cumulative_lower: Dict
-
-    @classmethod
-    def from_mfile(cls, m_file: mf.MFile, scan):
-        data = {}
-        fields = cls.__dataclass_fields__
-        # Magnet conditionals
-        fields.pop("wwp1", "wwp2", "dr_tf_wp", "tinstf", "thkcas", "casthi")
-        # Radial build keys
-        fields.pop("upper", "lower", "cumulative_upper", "cumulative_lower")
-        for var in fields:
-            data[var] = m_file.data["bore"].get_scan(scan)
-            if var == "n_tf":
-                cls.process_tf(m_file, scan, data)
-        (
-            data["upper"],
-            data["lower"],
-            data["cumulative_upper"],
-            data["cumulative_lower"],
-        ) = cls.create_radial_build(m_file, scan, data)
-        return cls(**data)
-
-    @staticmethod
-    def process_tf(m_file, scan, data):
-        # Check for Copper magnets
-        i_tf_sup = (
-            int(m_file.data["i_tf_sup"].get_scan(scan))
-            if "i_tf_sup" in m_file.data
-            else 1
-        )
-
-        # Check integer turns
-        i_tf_turns_integer = (
-            int(m_file.data["i_tf_turns_integer"].get_scan(scan))
-            if "i_tf_turns_integer" in m_file.data
-            else 0
-        )
-        sc_mag_keys = ("wwp1", "dr_tf_wp", "tinstf", "thkcas", "casthi")
-        if i_tf_sup == 1:  # If superconducting magnets
-            # casthi to be re-inergrated to resistives when in-plane stresses is integrated
-            for k in sc_mag_keys:
-                data[k] = m_file.data[k].get_scan(scan)
-            data["wwp2"] = (
-                m_file.data["wwp2"].get_scan(scan) if i_tf_turns_integer == 0 else None
-            )
-        else:
-            for k in sc_mag_keys:
-                data[k] = None
-            data["wwp2"] = None
-
-    @staticmethod
-    def create_radial_build(m_file, scan):
-        # Build the dictionaries of radial and vertical build values and cumulative values
-
-        # UNUSED
-        # radial = {}
-        # cumulative_radial = {}
-        # subtotal = 0
-        # for item in RADIAL_BUILD:
-        #     if item == "rminori" or item == "rminoro":
-        #         build = m_file.data["rminor"].get_scan(scan)
-        #     elif item == "vvblgapi" or item == "vvblgapo":
-        #         build = m_file.data["vvblgap"].get_scan(scan)
-        #     elif "d_vv_in" in item:
-        #         build = m_file.data["d_vv_in"].get_scan(scan)
-        #     elif "d_vv_out" in item:
-        #         build = m_file.data["d_vv_out"].get_scan(scan)
-        #     else:
-        #         build = m_file.data[item].get_scan(scan)
-
-        # radial[item] = build
-        # subtotal += build
-        # cumulative_radial[item] = subtotal
-
-        upper = {}
-        cumulative_upper = {}
-        subtotal = 0
-        for item in vertical_upper:
-            upper[item] = m_file.data[item].get_scan(scan)
-            subtotal += upper[item]
-            cumulative_upper[item] = subtotal
-
-        lower = {}
-        cumulative_lower = {}
-        subtotal = 0
-        for item in vertical_lower:
-            lower[item] = m_file.data[item].get_scan(scan)
-            subtotal -= lower[item]
-            cumulative_lower[item] = subtotal
-
-        return upper, lower, cumulative_upper, cumulative_lower
 
 
 def main(args=None):
@@ -2908,73 +2467,33 @@ def main(args=None):
     args = parse_args(args)
 
     # read MFILE
-    if args.f != "":
-        m_file = mf.MFile(args.f)
-    else:
-        m_file = mf.MFile("MFILE.DAT")
+    m_file = mf.MFile(args.f) if args.f != "" else mf.MFile("MFILE.DAT")
 
-    if args.n:
-        scan = args.n
-    else:
-        scan = -1
+    scan = args.n if args.n else -1
 
-    if args.DEMO_ranges:
-        demo_ranges = True
-    else:
-        demo_ranges = False
+    demo_ranges = args.DEMO_ranges
 
     plot_data = PlotData.from_mfile(m_file, scan)
 
-    # Radial position  -- 0
-    # Electron density -- 1
-    # Electron temperature -- 2
-    # Ion temperature -- 3
-    # Deuterium density -- 4
-    # Tritium density -- 5
-    # BS current density(MA/m^2) -- 6
-    # CD current dens(MA/m^2) -- 7
-    # Total current dens(MA/m^2) -- 8
-    # Poloidal current(R*Bp)(T.m) -- 9
-    # Safety factor q -- 10
-    # Volume (m^3) -- 11
-    # dVolume/dr (m^2) -- 12
-    # Plasma conductivity(MA/(V.m) -- 13
-    # Alpha press(keV*10^10 m^-3) -- 14
-    # Ion dens(10^19 m^-3) -- 15
-    # Poloidal flux (Wb) -- 16
-    if args.m != "":
-        plasmod_profiles = np.loadtxt(args.m).transpose()
-        pmod_r = plasmod_profiles[0]
-        pmod_ne = plasmod_profiles[1]
-        pmod_te = plasmod_profiles[2]
-        pmod_ti = plasmod_profiles[3]
-        pmod_nd = plasmod_profiles[4]
-        pmod_nt = plasmod_profiles[5]
-        pmod_q = plasmod_profiles[10]
-        pmod_ni = plasmod_profiles[15]
-        pmod_switch = True
-        print("plasmod!")
-    else:
-        if plot_data.ipedestal == 2 or plot_data.ipedestal == 3:
-            print("\n ERROR: Specify the PLASMOD profile file using -m \n")
-            exit()
-        pmod_switch = False
-
-    colour_dict = {}
-    colour_dict["ohcth"] = solenoid
-    colour_dict["tfcth"] = tfc
-    colour_dict["thshield_ib"] = thermal_shield
-    colour_dict["thshield_ob"] = thermal_shield
-    colour_dict["thshield_vb"] = thermal_shield
-    colour_dict["d_vv_in"] = vessel
-    colour_dict["d_vv_out"] = vessel
-    colour_dict["d_vv_top"] = vessel
-    colour_dict["d_vv_bot"] = vessel
-    colour_dict["shldith"] = shield
-    colour_dict["blnkith"] = blanket
-    colour_dict["rminor"] = plasma
-    colour_dict["fwith"] = firstwall
-    colour_dict["fwoth"] = firstwall
+    colour_dict = {
+        "ohcth": solenoid,
+        "precomp": cscompression,
+        "tfcth": tfc,
+        "thshield_ib": thermal_shield,
+        "thshield_ob": thermal_shield,
+        "thshield_vb": thermal_shield,
+        "d_vv_in": vessel,
+        "d_vv_out": vessel,
+        "d_vv_top": vessel,
+        "d_vv_bot": vessel,
+        "shldith": shield,
+        "shldoth": shield,
+        "blnkith": blanket,
+        "blnkoth": blanket,
+        "fwith": firstwall,
+        "fwoth": firstwall,
+        "rminor": plasma,
+    }
 
     # read MFILE
     # m_file = mf.MFile(args.f)
@@ -2986,16 +2505,9 @@ def main(args=None):
 
     # run main_plot
     main_plot(
-        page1,
-        page2,
-        plot_data,
-        m_file,
-        scan=scan,
-        plasmod=pmod_switch,
-        demo_ranges=demo_ranges,
+        page1, page2, plot_data, colour_dict, m_file, scan=scan, demo_ranges=demo_ranges
     )
 
-    # with bpdf.PdfPages(args.o) as pdf:
     with bpdf.PdfPages(args.f + "SUMMARY.pdf") as pdf:
         pdf.savefig(page1)
         pdf.savefig(page2)
@@ -3004,9 +2516,8 @@ def main(args=None):
     if args.show:
         plt.show(block=True)
 
-    # This bit doesn't work - the argument is not recognised for some reason.:
-    # if args.svg:
-    #    save_plots(m_file)
+    if args.svg:
+        save_plots(m_file, plot_data, colour_dict, demo_ranges, scan)
     plt.close(page1)
     plt.close(page2)
 
