@@ -13,6 +13,8 @@ to avoid cyclic dependencies. This is because the dicts
 generation script imports, and inspects, process.
 
 """
+from __future__ import annotations
+
 import argparse
 import os
 from dataclasses import dataclass
@@ -257,7 +259,7 @@ class PlotData:
             else 0
         )
         if i_tf_sup == 1:  # If superconducting magnets
-            # casthi to be re-inergrated to resistives when in-plane stresses is integrated
+            # casthi to be re-integrated to resistives when in-plane stresses is integrated
             for k in cls.mag_cond:
                 if k == "wwp2":
                     data[k] = (
@@ -356,16 +358,26 @@ def plotdh(axis, r0, a, delta, kap):
 def plotdhgap(axis, inpt, outpt, inthk, outthk, toppt, topthk, delta, col):
     """Plots half a thick D-section with a gap.
 
-    Arguments:
-        axis --> axis object to plot to
-        inpt --> inner points
-        outpt --> outer points
-        inthk --> inner thickness
-        outthk --> outer thickness
-        toppt --> top points
-        topthk --> top thickness
-        delta --> triangularity
-        col --> color for fill
+    Parameters
+    ----------
+    axis:
+        axis object to plot to
+    inpt:
+        inner points
+    outpt:
+        outer points
+    inthk:
+        inner thickness
+    outthk:
+        outer thickness
+    toppt:
+        top points
+    topthk:
+        top thickness
+    delta:
+        triangularity
+    col:
+        color for fill
 
     """
     arc = np.pi / 4.0
@@ -486,87 +498,7 @@ def plot_centre_cross(axis, rmajor):
     )
 
 
-def cumulative_radial_build(
-    section, mfile_data, plot_data, scan, *, with_previous=False, verbose=True
-) -> Union[float, Tuple[float, float]]:
-    """Function for calculating the cumulative radial build up to and
-    including the given section.
-
-    Arguments:
-        section --> section of the radial build to go up to
-        mfile_data --> MFILE data object
-        scan --> scan number to use
-
-    Returns
-    -------
-        cumulative_build --> cumulative radial build up to and including
-                             section given
-        previous         --> cumulative radial build up to section given
-
-    """
-    complete = False
-    cumulative_build = 0
-    build = 0
-    for item in RADIAL_BUILD:
-        if item == "rminori" or item == "rminoro":
-            build = plot_data.rminor
-        elif item == "vvblgapi" or item == "vvblgapo":
-            build = plot_data.vvblgap
-        elif "d_vv_in" in item:
-            build = plot_data.d_vv_in
-        elif "d_vv_out" in item:
-            build = plot_data.d_vv_out
-        else:
-            build = mfile_data.data[item].get_scan(scan)
-        cumulative_build += build
-        if item == section:
-            complete = True
-            break
-
-    if not complete and verbose:
-        print("radial build parameter ", section, " not found")
-    if with_previous:
-        return cumulative_build, cumulative_build - build
-    else:
-        return cumulative_build
-
-
-def poloidal_cross_section(axis, mfile_data, plot_data, scan, demo_ranges):
-    """Function to plot poloidal cross-section
-
-    Arguments:
-      axis --> axis object to add plot to
-      mfile_data --> MFILE data object
-      scan --> scan number to use
-
-    """
-    axis.set_xlabel("R / m")
-    axis.set_ylabel("Z / m")
-    axis.set_title("Poloidal cross-section")
-
-    plot_vacuum_vessel(axis, mfile_data, plot_data, scan)
-    plot_shield(axis, mfile_data, plot_data, scan)
-    plot_blanket(axis, mfile_data, plot_data, scan)
-    plot_firstwall(axis, mfile_data, plot_data, scan)
-
-    plot_plasma(axis, plot_data)
-    plot_centre_cross(axis, plot_data.rmajor)
-    plot_cryostat(axis, mfile_data, plot_data, scan)
-
-    plot_tf_coils(axis, mfile_data, plot_data, scan)
-    plot_pf_coils(axis, mfile_data, scan)
-
-    # Ranges
-    if demo_ranges:
-        # DEMO : Fixed ranges for comparison
-        axis.set_ylim([-15, 15])
-        axis.set_xlim([0, 20])
-    else:
-        # Adapatative ranges
-        axis.set_xlim([0, axis.get_xlim()[1]])
-
-
-def plot_cryostat(axis, mfile_data, plot_data, scan):
+def plot_cryostat(axis, plot_data):
     """Function to plot cryostat in poloidal cross-section"""
     rdewex = plot_data.rdewex
     ddwex = plot_data.ddwex
@@ -621,6 +553,541 @@ def color_key(axis):
             axis.add_patch(
                 patches.Rectangle([0.2, rect_h], 1, 0.4, lw=0, facecolor=colour)
             )
+
+
+def TF_outboard(axis, item, n_tf, r3, r4, w, facecolor):
+    # with spacing
+    ang = item * 2 * np.pi / n_tf
+    dx = w * np.sin(ang)
+    dy = w * np.cos(ang)
+    verts = [
+        (r * np.cos(ang) + x_s * dx, r * np.sin(ang) + y_s * dy)
+        for x_s, y_s, r in zip((1, 1, -1 - 1), (-1, -1, 1, 1), (r3, r4, r4, r3))
+    ]
+    axis.add_patch(
+        patches.PathPatch(Path(verts, closed=True), facecolor=facecolor, lw=0)
+    )
+
+
+def arc(axis, r, theta1=0, theta2=RTANGLE, style="solid"):
+    """Plots an arc.
+
+    Arguments
+
+    axis: plot object
+    r: radius
+    theta1: starting polar angle
+    theta2: finishing polar angle
+
+    """
+    ang = np.linspace(theta1, theta2)
+    axis.plot(r * np.cos(ang), r * np.sin(ang), linestyle=style, color="black", lw=0.2)
+
+
+def arc_fill(axis, r1, r2, color="pink"):
+    """Fills the space between two quarter circles.
+
+    Parameters
+    ----------
+    axis:
+        plot object
+    r1, r2:
+         radii to be filled
+
+    """
+    ang1 = np.linspace(0, RTANGLE, endpoint=True)
+    ang2 = np.linspace(RTANGLE, 0, endpoint=True)
+    verts = (
+        list(zip(r1 * np.cos(ang1), r1 * np.sin(ang1)))
+        + list(zip(r2 * np.cos(ang2), r2 * np.sin(ang2)))
+        + [(r2, 0)]
+    )
+    axis.add_patch(patches.PathPatch(Path(verts, closed=True), facecolor=color, lw=0))
+
+
+def ellips_fill(
+    axis, a1=0, a2=0, b1=0, b2=0, x0=0, y0=0, ang1=0, ang2=RTANGLE, color="pink"
+):
+    """Fills the space between two concentric ellipse sectors.
+
+    Arguments
+
+    axis: plot object
+    a1, a2, b1, b2 horizontal and vertical radii to be filled
+    x0, y0 coordinates of centre of the ellipses
+    ang1, ang2 are the polar angles of the start and end
+
+    """
+    angs = np.linspace(ang1, ang2, endpoint=True)
+    r1 = ((np.cos(angs) / a1) ** 2 + (np.sin(angs) / b1) ** 2) ** (-0.5)
+    xs1 = r1 * np.cos(angs) + x0
+    ys1 = r1 * np.sin(angs) + y0
+    angs = np.linspace(ang2, ang1, endpoint=True)
+    r2 = ((np.cos(angs) / a2) ** 2 + (np.sin(angs) / b2) ** 2) ** (-0.5)
+    xs2 = r2 * np.cos(angs) + x0
+    ys2 = r2 * np.sin(angs) + y0
+    verts = list(zip(xs1, ys1))
+    verts.extend(list(zip(xs2, ys2)))
+    endpoint = verts[-1:]
+    verts.extend(endpoint)
+    path = Path(verts, closed=True)
+    patch = patches.PathPatch(path, facecolor=color, lw=0)
+    axis.add_patch(patch)
+
+
+def angle_check(angle1, angle2):
+    """Function to perform TF coil angle check"""
+    if angle1 > 1:
+        angle1 = 1
+    elif angle1 < -1:
+        angle1 = -1
+    if angle2 > 1:
+        angle2 = 1
+    elif angle2 < -1:
+        angle2 = -1
+    return angle1, angle2
+
+
+def plot_nprofile(prof, demo_ranges, plot_data):
+    """Function to plot density profile
+    Arguments:
+      prof --> axis object to add plot to
+    """
+    alphan = plot_data.alphan
+    ne0 = plot_data.ne0
+    neped = plot_data.neped
+    nesep = plot_data.nesep
+    rhopedn = plot_data.rhopedn
+    ipedestal = plot_data.ipedestal
+
+    prof.set_xlabel("r/a")
+    prof.set_ylabel(r"$n_{e}\cdot 10^{19}$ $[\mathrm{m}^{-3}]$")
+    prof.set_title("Density profile")
+
+    if ipedestal == 1:
+        rhocore1 = np.linspace(0, 0.95 * rhopedn)
+        rhocore2 = np.linspace(0.95 * rhopedn, rhopedn)
+        rhocore = np.append(rhocore1, rhocore2)
+        ncore = neped + (ne0 - neped) * (1 - rhocore**2 / rhopedn**2) ** alphan
+
+        rhosep = np.linspace(rhopedn, 1)
+        nsep = nesep + (neped - nesep) * (1 - rhosep) / (1 - min(0.9999, rhopedn))
+
+        rho = np.append(rhocore, rhosep)
+        ne = np.append(ncore, nsep)
+    else:
+        rho1 = np.linspace(0, 0.95)
+        rho2 = np.linspace(0.95, 1)
+        rho = np.append(rho1, rho2)
+        ne = ne0 * (1 - rho**2) ** alphan
+    ne = ne / 1e19
+    prof.plot(rho, ne)
+
+    # Ranges
+    prof.set_xlim([0, 1])
+    if demo_ranges:
+        # DEMO : Fixed ranges for comparison
+        prof.set_ylim([0, 20])
+    else:
+        # Adaptive ranges
+        prof.set_ylim([0, prof.get_ylim()[1]])
+
+
+def plot_tprofile(prof, demo_ranges, plot_data):
+    """Function to plot temperature profile
+    Arguments:
+      prof --> axis object to add plot to
+    """
+    alphat = plot_data.alphat
+    rhopedt = plot_data.rhopedt
+    tbeta = plot_data.tbeta
+    te0 = plot_data.te0
+    teped = plot_data.teped
+    tesep = plot_data.tesep
+    ipedestal = plot_data.ipedestal
+
+    prof.set_xlabel("r/a")
+    prof.set_ylabel("$T_{e}$ [keV]")
+    prof.set_title("Temperature profile")
+
+    if ipedestal == 1:
+        rhocore1 = np.linspace(0, 0.9 * rhopedt)
+        rhocore2 = np.linspace(0.9 * rhopedt, rhopedt)
+        rhocore = np.append(rhocore1, rhocore2)
+        tcore = teped + (te0 - teped) * (1 - (rhocore / rhopedt) ** tbeta) ** alphat
+
+        rhosep = np.linspace(rhopedt, 1)
+        tsep = tesep + (teped - tesep) * (1 - rhosep) / (1 - min(0.9999, rhopedt))
+
+        rho = np.append(rhocore, rhosep)
+        te = np.append(tcore, tsep)
+    else:
+        rho1 = np.linspace(0, 0.95)
+        rho2 = np.linspace(0.95, 1)
+        rho = np.append(rho1, rho2)
+        te = te0 * (1 - rho**2) ** alphat
+    prof.plot(rho, te)
+
+    # Ranges
+    prof.set_xlim([0, 1])
+    if demo_ranges:
+        # DEMO : Fixed ranges for comparison
+        prof.set_ylim([0, 50])
+    else:
+        # Adapatative ranges
+        prof.set_ylim([0, prof.get_ylim()[1]])
+
+
+def plot_qprofile(prof, demo_ranges, plot_data):
+    """Function to plot q profile, formula taken from Nevins bootstrap model.
+
+    Arguments:
+      prof --> axis object to add plot to
+    """
+    q0 = plot_data.q0
+    q95 = plot_data.q95
+
+    prof.set_xlabel("r/a")
+    prof.set_ylabel("q(r)")
+    prof.set_title("q profile")
+
+    rho = np.linspace(0, 1)
+    q_r_nevin = q0 + (q95 - q0) * (rho + rho * rho + rho**3) / (3.0)
+    q_r_sauter = q0 + (q95 - q0) * (rho * rho)
+
+    prof.plot(rho, q_r_nevin, label="Nevins")
+    prof.plot(rho, q_r_sauter, label="Sauter")
+    prof.legend()
+
+    # Ranges
+    prof.set_xlim([0, 1])
+    if demo_ranges:
+        # DEMO : Fixed ranges for comparison
+        prof.set_ylim([0, 10])
+    else:
+        # Adapatative ranges
+        prof.set_ylim([0, prof.get_ylim()[1]])
+
+
+def read_imprad_data(data_path):
+    """Function to read all data needed for creation of radiation profile
+
+    Arguments:
+        data_path --> path to impurity data
+    """
+    label = [
+        "H_",
+        "He",
+        "Be",
+        "C_",
+        "N_",
+        "O_",
+        "Ne",
+        "Si",
+        "Ar",
+        "Fe",
+        "Ni",
+        "Kr",
+        "Xe",
+        "W_",
+    ]
+    lzdata = [0.0 for x in range(len(label))]
+    # DATAFILENAME = p DATAPATH +
+
+    for i in range(len(label)):
+        file_iden = data_path + label[i].ljust(3, "_")
+
+        Te = None
+        lz = None
+        zav = None
+
+        for header in read_impurity_file(file_iden + "lz_tau.dat"):
+            if "Te[eV]" in header.content:
+                Te = np.asarray(header.data, dtype=float)
+
+            if "infinite confinement" in header.content:
+                lz = np.asarray(header.data, dtype=float)
+        for header in read_impurity_file(file_iden + "z_tau.dat"):
+            if "infinite confinement" in header.content:
+                zav = np.asarray(header.data, dtype=float)
+
+        lzdata[i] = np.column_stack((Te, lz, zav))
+
+    # then switch string to floats
+    return np.array(lzdata, dtype=float)
+
+
+def synchrotron_rad(plot_data):
+    """Function for Synchrotron radiation power calculation from Albajar, Nuclear Fusion 41 (2001) 665
+      Fidone, Giruzzi, Granata, Nuclear Fusion 41 (2001) 1755
+
+    Arguments:
+    """
+    # tbet is betaT in Albajar, not to be confused with plasma beta
+    vol = plot_data.vol
+    rmajor = plot_data.rmajor
+    rminor = plot_data.rminor
+    alphan = plot_data.alphan
+    alphat = plot_data.alphat
+    ne0 = plot_data.ne0
+    te0 = plot_data.te0
+    ssync = plot_data.ssync
+    bt = plot_data.bt
+
+    tbet = 2.0
+    # rpow is the(1-Rsyn) power dependence based on plasma shape
+    # (see Fidone)
+    rpow = 0.62
+    kap = vol / (2.0 * 3.1415**2 * rmajor * rminor**2)
+
+    # No account is taken of pedestal profiles here, other than use of
+    # the correct ne0 and te0...
+    de2o = 1.0e-20 * ne0
+    pao = 6.04e3 * (rminor * de2o) / bt
+    gfun = 0.93 * (1.0 + 0.85 * np.exp(-0.82 * rmajor / rminor))
+    kfun = (alphan + 3.87e0 * alphat + 1.46) ** (-0.79)
+    kfun = kfun * (1.98 + alphat) ** 1.36 * tbet**2.14
+    kfun = kfun * (tbet**1.53 + 1.87 * alphat - 0.16) ** (-1.33)
+    dum = 1.0 + 0.12 * (te0 / (pao**0.41)) * (1.0 - ssync) ** 0.41
+    # Very high T modification, from Fidone
+    dum = dum ** (-1.51)
+
+    psync = 3.84e-8 * (1.0e0 - ssync) ** rpow * rmajor * rminor**1.38
+    psync = psync * kap**0.79 * bt**2.62 * de2o**0.38
+    psync = psync * te0 * (16.0 + te0) ** 2.61 * dum * gfun * kfun
+
+    # psyncpv should be per unit volume
+    # Albajar gives it as total
+    psyncpv = psync / vol
+    print("psyncpv = ", psyncpv * vol)  # matches the out.dat file
+
+    return psyncpv
+
+
+def plot_radprofile(prof, imp_frac, plot_data, impp, demo_ranges) -> float:
+    """Function to plot radiation profile, formula taken from ???.
+
+    Arguments:
+      prof --> axis object to add plot to
+      mfile_data --> MFILE.DAT object
+      scan --> scan number to use
+      impp --> impurity path
+    """
+    alphan = plot_data.alphan
+    alphat = plot_data.alphat
+    ne0 = plot_data.ne0
+    neped = plot_data.neped
+    nesep = plot_data.nesep
+    rhopedn = plot_data.rhopedn
+    rhopedt = plot_data.rhopedt
+    tbeta = plot_data.tbeta
+    te0 = plot_data.te0
+    teped = plot_data.teped
+    tesep = plot_data.tesep
+    ipedestal = plot_data.ipedestal
+
+    prof.set_xlabel("r/a")
+    prof.set_ylabel(r"$P_{\mathrm{rad}}$ $[\mathrm{MW.m}^{-3}]$")
+    prof.set_title("Radiation profile")
+
+    # read in the impurity data
+    imp_data = read_imprad_data(2, impp)
+
+    if ipedestal == 0:
+        # Intialise the radius
+        rho = np.linspace(0, 1.0)
+
+        # The density profile
+        ne = ne0 * (1 - rho**2) ** alphan
+
+        # The temperature profile
+        te = te0 * (1 - rho**2) ** alphat
+
+    if ipedestal == 1:
+        # Intialise the normalised radius
+        rhoped = (rhopedn + rhopedt) / 2.0
+        rhocore1 = np.linspace(0, 0.95 * rhoped)
+        rhocore2 = np.linspace(0.95 * rhoped, rhoped)
+        rhocore = np.append(rhocore1, rhocore2)
+        rhosep = np.linspace(rhoped, 1)
+        rho = np.append(rhocore, rhosep)
+
+        # The density and temperature profile
+        # done in such away as to allow for plotting pedestals
+        # with different rhopedn and rhopedt
+        ne = np.zeros(rho.shape[0])
+        te = np.zeros(rho.shape[0])
+        for q in range(rho.shape[0]):
+            if rho[q] <= rhopedn:
+                ne[q] = (
+                    neped + (ne0 - neped) * (1 - rho[q] ** 2 / rhopedn**2) ** alphan
+                )
+            else:
+                ne[q] = nesep + (neped - nesep) * (1 - rho[q]) / (
+                    1 - min(0.9999, rhopedn)
+                )
+
+            if rho[q] <= rhopedt:
+                te[q] = (
+                    teped + (te0 - teped) * (1 - (rho[q] / rhopedt) ** tbeta) ** alphat
+                )
+            else:
+                te[q] = tesep + (teped - tesep) * (1 - rho[q]) / (
+                    1 - min(0.9999, rhopedt)
+                )
+
+        # ncore = neped + (ne0-neped) * (1-rhocore**2/rhopedn**2)**alphan
+        # nsep = nesep + (neped-nesep) * (1-rhosep)/(1-min(0.9999, rhopedn))
+        # ne = np.append(ncore, nsep)
+
+        # The temperatue profile
+        # tcore = teped + (te0-teped) * (1-(rhocore/rhopedt)**tbeta)**alphat
+        # tsep = tesep + (teped-tesep)* (1-rhosep)/(1-min(0.9999,rhopedt))
+        # te = np.append(tcore,tsep)
+
+    # Intailise the radiation profile arrays
+    pimpden = np.zeros([imp_data.shape[0], te.shape[0]])
+    lz = np.zeros([imp_data.shape[0], te.shape[0]])
+    prad = np.zeros(te.shape[0])
+
+    # psyncpv = synchrotron_rad()
+
+    # Intailise the impurity radiation profile
+    for k in range(te.shape[0]):
+        for i in range(imp_data.shape[0]):
+            if te[k] <= imp_data[i][0][0]:
+                lz[i][k] = imp_data[i][0][1]
+            elif te[k] >= imp_data[i][imp_data.shape[1] - 1][0]:
+                lz[i][k] = imp_data[i][imp_data.shape[1] - 1][1]
+            else:
+                for j in range(imp_data.shape[1] - 1):
+                    # Linear interpolation in log-log space
+                    if (te[k] > imp_data[i][j][0]) and (te[k] <= imp_data[i][j + 1][0]):
+                        yi = np.log(imp_data[i][j][1])
+                        xi = np.log(imp_data[i][j][0])
+                        c = (np.log(imp_data[i][j + 1][1]) - yi) / (
+                            np.log(imp_data[i][j + 1][0]) - xi
+                        )
+                        lz[i][k] = np.exp(yi + c * (np.log(te[k]) - xi))
+                        # Zav[i][k] = imp_data[i][j][2]
+            # The impurity radiation
+            pimpden[i][k] = imp_frac[i] * ne[k] * ne[k] * lz[i][k]
+            # The Bremsstrahlung
+            # pbremden[i][k] = imp_frac[i] * ne[k] * ne[k] * Zav[i][k] * Zav[i][k] * 5.355e-37 * np.sqrt(te[k])
+
+        for l in range(imp_data.shape[0]):  # noqa: E741
+            prad[k] = prad[k] + pimpden[l][k] * 2.0e-6
+            # pbrem[k] = pbrem[k] + pbremden[l][k] * 2.0e-6
+
+    # benchmark prad again outfile so mod prad
+    # pbremint = (rho[1:] * pbrem[1:]) @ drho
+    # pradint = prad[1:] @ drho * 2.0e-5
+    # pbremint = pbrem[1:] @ drho * 2.0e-5
+
+    # print('prad = ',prad)
+    # print('pbrem = ',pbrem)
+    # print(1.0e32*lz[12])
+    # print('pradpv = ',pradint)
+    # print('pbrempv = ',pbremint)
+    # print('pbremmw = ',pbremint*vol)
+    # print('pradmw = ', pradint*vol, 'MW') # pimp = pline + pbrem
+
+    prof.plot(rho, prad, label="Total")
+    prof.plot(rho, pimpden[0] * 2.0e-6, label="H")
+    prof.plot(rho, pimpden[1] * 2.0e-6, label="He")
+    labels = ["Be", "C", "N", "O", "Ne", "Si", "Ar", "Fe", "Ni", "Kr", "Xe", "W"]
+    for i_f, label, p_den in zip(imp_frac[2:14], labels, pimpden[2:14]):
+        if i_f > 1.0e-30:
+            prof.plot(rho, p_den * 2.0e-6, label=label)
+    prof.legend()
+
+    # Ranges
+    prof.set_xlim([0, 1])
+    if demo_ranges:
+        # DEMO : Fixed ranges for comparison
+        prof.set_ylim([0, 0.5])
+    else:
+        # Adapatative ranges
+        prof.set_ylim([0, prof.get_ylim()[1]])
+
+
+def cumulative_radial_build(
+    section, mfile_data, plot_data, scan, *, with_previous=False, verbose=True
+) -> Union[float, Tuple[float, float]]:
+    """Function for calculating the cumulative radial build up to and
+    including the given section.
+
+    Arguments:
+        section --> section of the radial build to go up to
+        mfile_data --> MFILE data object
+        scan --> scan number to use
+
+    Returns
+    -------
+        cumulative_build --> cumulative radial build up to and including
+                             section given
+        previous         --> cumulative radial build up to section given
+
+    """
+    complete = False
+    cumulative_build = 0
+    build = 0
+    for item in RADIAL_BUILD:
+        if item == "rminori" or item == "rminoro":
+            build = plot_data.rminor
+        elif item == "vvblgapi" or item == "vvblgapo":
+            build = plot_data.vvblgap
+        elif "d_vv_in" in item:
+            build = plot_data.d_vv_in
+        elif "d_vv_out" in item:
+            build = plot_data.d_vv_out
+        else:
+            build = mfile_data.data[item].get_scan(scan)
+        cumulative_build += build
+        if item == section:
+            complete = True
+            break
+
+    if not complete and verbose:
+        print("radial build parameter ", section, " not found")
+    if with_previous:
+        return cumulative_build, cumulative_build - build
+    return cumulative_build
+
+
+def poloidal_cross_section(axis, mfile_data, plot_data, scan, demo_ranges):
+    """Function to plot poloidal cross-section
+
+    Arguments:
+      axis --> axis object to add plot to
+      mfile_data --> MFILE data object
+      scan --> scan number to use
+
+    """
+    axis.set_xlabel("R / m")
+    axis.set_ylabel("Z / m")
+    axis.set_title("Poloidal cross-section")
+
+    plot_vacuum_vessel(axis, mfile_data, plot_data, scan)
+    plot_shield(axis, mfile_data, plot_data, scan)
+    plot_blanket(axis, mfile_data, plot_data, scan)
+    plot_firstwall(axis, mfile_data, plot_data, scan)
+
+    plot_plasma(axis, plot_data)
+    plot_centre_cross(axis, plot_data.rmajor)
+    plot_cryostat(axis, plot_data)
+
+    plot_tf_coils(axis, mfile_data, plot_data, scan)
+    plot_pf_coils(axis, mfile_data, scan)
+
+    # Ranges
+    if demo_ranges:
+        # DEMO : Fixed ranges for comparison
+        axis.set_ylim([-15, 15])
+        axis.set_xlim([0, 20])
+    else:
+        # Adapatative ranges
+        axis.set_xlim([0, axis.get_xlim()[1]])
 
 
 def toroidal_cross_section(axis, mfile_data, plot_data, colour_dict, scan, demo_ranges):
@@ -821,475 +1288,6 @@ def toroidal_cross_section(axis, mfile_data, plot_data, colour_dict, scan, demo_
         axis.set_xlim([0.0, axis.get_xlim()[1]])
 
 
-def TF_outboard(axis, item, n_tf, r3, r4, w, facecolor):
-    # with spacing
-    ang = item * 2 * np.pi / n_tf
-    dx = w * np.sin(ang)
-    dy = w * np.cos(ang)
-    verts = [
-        (r * np.cos(ang) + x_s * dx, r * np.sin(ang) + y_s * dy)
-        for x_s, y_s, r in zip((1, 1, -1 - 1), (-1, -1, 1, 1), (r3, r4, r4, r3))
-    ]
-    axis.add_patch(
-        patches.PathPatch(Path(verts, closed=True), facecolor=facecolor, lw=0)
-    )
-
-
-def arc(axis, r, theta1=0, theta2=RTANGLE, style="solid"):
-    """Plots an arc.
-
-    Arguments
-
-    axis: plot object
-    r: radius
-    theta1: starting polar angle
-    theta2: finishing polar angle
-
-    """
-    ang = np.linspace(theta1, theta2)
-    axis.plot(r * np.cos(ang), r * np.sin(ang), linestyle=style, color="black", lw=0.2)
-
-
-def arc_fill(axis, r1, r2, color="pink"):
-    """Fills the space between two quarter circles.
-
-    Arguments
-
-    axis: plot object
-    r1, r2 radii to be filled
-
-    """
-    ang1 = np.linspace(0, RTANGLE, endpoint=True)
-    ang2 = np.linspace(RTANGLE, 0, endpoint=True)
-    verts = (
-        list(zip(r1 * np.cos(ang1), r1 * np.sin(ang1)))
-        + list(zip(r2 * np.cos(ang2), r2 * np.sin(ang2)))
-        + [(r2, 0)]
-    )
-    axis.add_patch(patches.PathPatch(Path(verts, closed=True), facecolor=color, lw=0))
-
-
-def ellips_fill(
-    axis, a1=0, a2=0, b1=0, b2=0, x0=0, y0=0, ang1=0, ang2=RTANGLE, color="pink"
-):
-    """Fills the space between two concentric ellipse sectors.
-
-    Arguments
-
-    axis: plot object
-    a1, a2, b1, b2 horizontal and vertical radii to be filled
-    x0, y0 coordinates of centre of the ellipses
-    ang1, ang2 are the polar angles of the start and end
-
-    """
-    angs = np.linspace(ang1, ang2, endpoint=True)
-    r1 = ((np.cos(angs) / a1) ** 2 + (np.sin(angs) / b1) ** 2) ** (-0.5)
-    xs1 = r1 * np.cos(angs) + x0
-    ys1 = r1 * np.sin(angs) + y0
-    angs = np.linspace(ang2, ang1, endpoint=True)
-    r2 = ((np.cos(angs) / a2) ** 2 + (np.sin(angs) / b2) ** 2) ** (-0.5)
-    xs2 = r2 * np.cos(angs) + x0
-    ys2 = r2 * np.sin(angs) + y0
-    verts = list(zip(xs1, ys1))
-    verts.extend(list(zip(xs2, ys2)))
-    endpoint = verts[-1:]
-    verts.extend(endpoint)
-    path = Path(verts, closed=True)
-    patch = patches.PathPatch(path, facecolor=color, lw=0)
-    axis.add_patch(patch)
-
-
-def plot_nprofile(prof, demo_ranges, plot_data):
-    """Function to plot density profile
-    Arguments:
-      prof --> axis object to add plot to
-    """
-    alphan = plot_data.alphan
-    ne0 = plot_data.ne0
-    neped = plot_data.neped
-    nesep = plot_data.nesep
-    rhopedn = plot_data.rhopedn
-    ipedestal = plot_data.ipedestal
-
-    prof.set_xlabel("r/a")
-    prof.set_ylabel(r"$n_{e}\cdot 10^{19}$ $[\mathrm{m}^{-3}]$")
-    prof.set_title("Density profile")
-
-    if ipedestal == 1:
-        rhocore1 = np.linspace(0, 0.95 * rhopedn)
-        rhocore2 = np.linspace(0.95 * rhopedn, rhopedn)
-        rhocore = np.append(rhocore1, rhocore2)
-        ncore = neped + (ne0 - neped) * (1 - rhocore**2 / rhopedn**2) ** alphan
-
-        rhosep = np.linspace(rhopedn, 1)
-        nsep = nesep + (neped - nesep) * (1 - rhosep) / (1 - min(0.9999, rhopedn))
-
-        rho = np.append(rhocore, rhosep)
-        ne = np.append(ncore, nsep)
-    else:
-        rho1 = np.linspace(0, 0.95)
-        rho2 = np.linspace(0.95, 1)
-        rho = np.append(rho1, rho2)
-        ne = ne0 * (1 - rho**2) ** alphan
-    ne = ne / 1e19
-    prof.plot(rho, ne)
-
-    # Ranges
-    prof.set_xlim([0, 1])
-    if demo_ranges:
-        # DEMO : Fixed ranges for comparison
-        prof.set_ylim([0, 20])
-    else:
-        # Adaptive ranges
-        prof.set_ylim([0, prof.get_ylim()[1]])
-
-
-def plot_tprofile(prof, demo_ranges, plot_data):
-    """Function to plot temperature profile
-    Arguments:
-      prof --> axis object to add plot to
-    """
-    alphat = plot_data.alphat
-    rhopedt = plot_data.rhopedt
-    tbeta = plot_data.tbeta
-    te0 = plot_data.te0
-    teped = plot_data.teped
-    tesep = plot_data.tesep
-    ipedestal = plot_data.ipedestal
-
-    prof.set_xlabel("r/a")
-    prof.set_ylabel("$T_{e}$ [keV]")
-    prof.set_title("Temperature profile")
-
-    if ipedestal == 1:
-        rhocore1 = np.linspace(0, 0.9 * rhopedt)
-        rhocore2 = np.linspace(0.9 * rhopedt, rhopedt)
-        rhocore = np.append(rhocore1, rhocore2)
-        tcore = teped + (te0 - teped) * (1 - (rhocore / rhopedt) ** tbeta) ** alphat
-
-        rhosep = np.linspace(rhopedt, 1)
-        tsep = tesep + (teped - tesep) * (1 - rhosep) / (1 - min(0.9999, rhopedt))
-
-        rho = np.append(rhocore, rhosep)
-        te = np.append(tcore, tsep)
-    else:
-        rho1 = np.linspace(0, 0.95)
-        rho2 = np.linspace(0.95, 1)
-        rho = np.append(rho1, rho2)
-        te = te0 * (1 - rho**2) ** alphat
-    prof.plot(rho, te)
-
-    # Ranges
-    # ---
-    prof.set_xlim([0, 1])
-    # DEMO : Fixed ranges for comparison
-    if demo_ranges:
-        prof.set_ylim([0, 50])
-
-    # Adapatative ranges
-    else:
-        prof.set_ylim([0, prof.get_ylim()[1]])
-    # ---
-
-
-def plot_qprofile(prof, demo_ranges, plot_data):
-    """Function to plot q profile, formula taken from Nevins bootstrap model.
-
-    Arguments:
-      prof --> axis object to add plot to
-    """
-    q0 = plot_data.q0
-    q95 = plot_data.q95
-
-    prof.set_xlabel("r/a")
-    prof.set_ylabel("q(r)")
-    prof.set_title("q profile")
-
-    rho = np.linspace(0, 1)
-    q_r_nevin = q0 + (q95 - q0) * (rho + rho * rho + rho**3) / (3.0)
-    q_r_sauter = q0 + (q95 - q0) * (rho * rho)
-
-    prof.plot(rho, q_r_nevin, label="Nevins")
-    prof.plot(rho, q_r_sauter, label="Sauter")
-    prof.legend()
-
-    # Ranges
-    # ---
-    prof.set_xlim([0, 1])
-    # DEMO : Fixed ranges for comparison
-    if demo_ranges:
-        prof.set_ylim([0, 10])
-
-    # Adapatative ranges
-    else:
-        prof.set_ylim([0, prof.get_ylim()[1]])
-    # ---
-
-
-def read_imprad_data(skiprows, data_path):
-    """Function to read all data needed for creation of radiation profile
-
-    Arguments:
-        skiprows --> number of rows to skip when reading impurity data files
-        data_path --> path to impurity data
-    """
-    label = [
-        "H_",
-        "He",
-        "Be",
-        "C_",
-        "N_",
-        "O_",
-        "Ne",
-        "Si",
-        "Ar",
-        "Fe",
-        "Ni",
-        "Kr",
-        "Xe",
-        "W_",
-    ]
-    lzdata = [0.0 for x in range(len(label))]
-    # DATAFILENAME = p DATAPATH +
-
-    for i in range(len(label)):
-        file_iden = data_path + label[i].ljust(3, "_")
-
-        Te = None
-        lz = None
-        zav = None
-
-        for header in read_impurity_file(file_iden + "lz_tau.dat"):
-            if "Te[eV]" in header.content:
-                Te = np.asarray(header.data, dtype=float)
-
-            if "infinite confinement" in header.content:
-                lz = np.asarray(header.data, dtype=float)
-        for header in read_impurity_file(file_iden + "z_tau.dat"):
-            if "infinite confinement" in header.content:
-                zav = np.asarray(header.data, dtype=float)
-
-        lzdata[i] = np.column_stack((Te, lz, zav))
-
-    # then switch string to floats
-    impdata = np.array(lzdata, dtype=float)
-    return impdata
-
-
-def synchrotron_rad(plot_data):
-    """Function for Synchrotron radiation power calculation from Albajar, Nuclear Fusion 41 (2001) 665
-      Fidone, Giruzzi, Granata, Nuclear Fusion 41 (2001) 1755
-
-    Arguments:
-    """
-    # tbet is betaT in Albajar, not to be confused with plasma beta
-    vol = plot_data.vol
-    rmajor = plot_data.rmajor
-    rminor = plot_data.rminor
-    alphan = plot_data.alphan
-    alphat = plot_data.alphat
-    ne0 = plot_data.ne0
-    te0 = plot_data.te0
-    ssync = plot_data.ssync
-    bt = plot_data.bt
-
-    tbet = 2.0
-    # rpow is the(1-Rsyn) power dependence based on plasma shape
-    # (see Fidone)
-    rpow = 0.62
-    kap = vol / (2.0 * 3.1415**2 * rmajor * rminor**2)
-
-    # No account is taken of pedestal profiles here, other than use of
-    # the correct ne0 and te0...
-    de2o = 1.0e-20 * ne0
-    pao = 6.04e3 * (rminor * de2o) / bt
-    gfun = 0.93 * (1.0 + 0.85 * np.exp(-0.82 * rmajor / rminor))
-    kfun = (alphan + 3.87e0 * alphat + 1.46) ** (-0.79)
-    kfun = kfun * (1.98 + alphat) ** 1.36 * tbet**2.14
-    kfun = kfun * (tbet**1.53 + 1.87 * alphat - 0.16) ** (-1.33)
-    dum = 1.0 + 0.12 * (te0 / (pao**0.41)) * (1.0 - ssync) ** 0.41
-    # Very high T modification, from Fidone
-    dum = dum ** (-1.51)
-
-    psync = 3.84e-8 * (1.0e0 - ssync) ** rpow * rmajor * rminor**1.38
-    psync = psync * kap**0.79 * bt**2.62 * de2o**0.38
-    psync = psync * te0 * (16.0 + te0) ** 2.61 * dum * gfun * kfun
-
-    # psyncpv should be per unit volume
-    # Albajar gives it as total
-    psyncpv = psync / vol
-    print("psyncpv = ", psyncpv * vol)  # matches the out.dat file
-
-    return psyncpv
-
-
-def plot_radprofile(prof, mfile_data, plot_data, scan, impp, demo_ranges) -> float:
-    """Function to plot radiation profile, formula taken from ???.
-
-    Arguments:
-      prof --> axis object to add plot to
-      mfile_data --> MFILE.DAT object
-      scan --> scan number to use
-      impp --> impurity path
-    """
-    alphan = plot_data.alphan
-    alphat = plot_data.alphat
-    ne0 = plot_data.ne0
-    neped = plot_data.neped
-    nesep = plot_data.nesep
-    rhopedn = plot_data.rhopedn
-    rhopedt = plot_data.rhopedt
-    tbeta = plot_data.tbeta
-    te0 = plot_data.te0
-    teped = plot_data.teped
-    tesep = plot_data.tesep
-    ipedestal = plot_data.ipedestal
-
-    prof.set_xlabel("r/a")
-    prof.set_ylabel(r"$P_{\mathrm{rad}}$ $[\mathrm{MW.m}^{-3}]$")
-    prof.set_title("Radiation profile")
-
-    # read in the impurity data
-    imp_data = read_imprad_data(2, impp)
-
-    # find impurity densities
-    imp_frac = np.array(
-        [
-            mfile_data.data["fimp(01)"].get_scan(scan),
-            mfile_data.data["fimp(02)"].get_scan(scan),
-            mfile_data.data["fimp(03)"].get_scan(scan),
-            mfile_data.data["fimp(04)"].get_scan(scan),
-            mfile_data.data["fimp(05)"].get_scan(scan),
-            mfile_data.data["fimp(06)"].get_scan(scan),
-            mfile_data.data["fimp(07)"].get_scan(scan),
-            mfile_data.data["fimp(08)"].get_scan(scan),
-            mfile_data.data["fimp(09)"].get_scan(scan),
-            mfile_data.data["fimp(10)"].get_scan(scan),
-            mfile_data.data["fimp(11)"].get_scan(scan),
-            mfile_data.data["fimp(12)"].get_scan(scan),
-            mfile_data.data["fimp(13)"].get_scan(scan),
-            mfile_data.data["fimp(14)"].get_scan(scan),
-        ]
-    )
-
-    if ipedestal == 0:
-        # Intialise the radius
-        rho = np.linspace(0, 1.0)
-
-        # The density profile
-        ne = ne0 * (1 - rho**2) ** alphan
-
-        # The temperature profile
-        te = te0 * (1 - rho**2) ** alphat
-
-    if ipedestal == 1:
-        # Intialise the normalised radius
-        rhoped = (rhopedn + rhopedt) / 2.0
-        rhocore1 = np.linspace(0, 0.95 * rhoped)
-        rhocore2 = np.linspace(0.95 * rhoped, rhoped)
-        rhocore = np.append(rhocore1, rhocore2)
-        rhosep = np.linspace(rhoped, 1)
-        rho = np.append(rhocore, rhosep)
-
-        # The density and temperature profile
-        # done in such away as to allow for plotting pedestals
-        # with different rhopedn and rhopedt
-        ne = np.zeros(rho.shape[0])
-        te = np.zeros(rho.shape[0])
-        for q in range(rho.shape[0]):
-            if rho[q] <= rhopedn:
-                ne[q] = (
-                    neped + (ne0 - neped) * (1 - rho[q] ** 2 / rhopedn**2) ** alphan
-                )
-            else:
-                ne[q] = nesep + (neped - nesep) * (1 - rho[q]) / (
-                    1 - min(0.9999, rhopedn)
-                )
-
-            if rho[q] <= rhopedt:
-                te[q] = (
-                    teped + (te0 - teped) * (1 - (rho[q] / rhopedt) ** tbeta) ** alphat
-                )
-            else:
-                te[q] = tesep + (teped - tesep) * (1 - rho[q]) / (
-                    1 - min(0.9999, rhopedt)
-                )
-
-        # ncore = neped + (ne0-neped) * (1-rhocore**2/rhopedn**2)**alphan
-        # nsep = nesep + (neped-nesep) * (1-rhosep)/(1-min(0.9999, rhopedn))
-        # ne = np.append(ncore, nsep)
-
-        # The temperatue profile
-        # tcore = teped + (te0-teped) * (1-(rhocore/rhopedt)**tbeta)**alphat
-        # tsep = tesep + (teped-tesep)* (1-rhosep)/(1-min(0.9999,rhopedt))
-        # te = np.append(tcore,tsep)
-
-    # Intailise the radiation profile arrays
-    pimpden = np.zeros([imp_data.shape[0], te.shape[0]])
-    lz = np.zeros([imp_data.shape[0], te.shape[0]])
-    prad = np.zeros(te.shape[0])
-
-    # psyncpv = synchrotron_rad()
-
-    # Intailise the impurity radiation profile
-    for k in range(te.shape[0]):
-        for i in range(imp_data.shape[0]):
-            if te[k] <= imp_data[i][0][0]:
-                lz[i][k] = imp_data[i][0][1]
-            elif te[k] >= imp_data[i][imp_data.shape[1] - 1][0]:
-                lz[i][k] = imp_data[i][imp_data.shape[1] - 1][1]
-            else:
-                for j in range(imp_data.shape[1] - 1):
-                    # Linear interpolation in log-log space
-                    if (te[k] > imp_data[i][j][0]) and (te[k] <= imp_data[i][j + 1][0]):
-                        yi = np.log(imp_data[i][j][1])
-                        xi = np.log(imp_data[i][j][0])
-                        c = (np.log(imp_data[i][j + 1][1]) - yi) / (
-                            np.log(imp_data[i][j + 1][0]) - xi
-                        )
-                        lz[i][k] = np.exp(yi + c * (np.log(te[k]) - xi))
-                        # Zav[i][k] = imp_data[i][j][2]
-            # The impurity radiation
-            pimpden[i][k] = imp_frac[i] * ne[k] * ne[k] * lz[i][k]
-            # The Bremsstrahlung
-            # pbremden[i][k] = imp_frac[i] * ne[k] * ne[k] * Zav[i][k] * Zav[i][k] * 5.355e-37 * np.sqrt(te[k])
-
-        for l in range(imp_data.shape[0]):  # noqa: E741
-            prad[k] = prad[k] + pimpden[l][k] * 2.0e-6
-            # pbrem[k] = pbrem[k] + pbremden[l][k] * 2.0e-6
-
-    # benchmark prad again outfile so mod prad
-    # pbremint = (rho[1:] * pbrem[1:]) @ drho
-    # pradint = prad[1:] @ drho * 2.0e-5
-    # pbremint = pbrem[1:] @ drho * 2.0e-5
-
-    # print('prad = ',prad)
-    # print('pbrem = ',pbrem)
-    # print(1.0e32*lz[12])
-    # print('pradpv = ',pradint)
-    # print('pbrempv = ',pbremint)
-    # print('pbremmw = ',pbremint*vol)
-    # print('pradmw = ', pradint*vol, 'MW') # pimp = pline + pbrem
-
-    prof.plot(rho, prad, label="Total")
-    prof.plot(rho, pimpden[0] * 2.0e-6, label="H")
-    prof.plot(rho, pimpden[1] * 2.0e-6, label="He")
-    labels = ["Be", "C", "N", "O", "Ne", "Si", "Ar", "Fe", "Ni", "Kr", "Xe", "W"]
-    for i_f, label, p_den in zip(imp_frac[2:14], labels, pimpden[2:14]):
-        if i_f > 1.0e-30:
-            prof.plot(rho, p_den * 2.0e-6, label=label)
-    prof.legend()
-
-    # Ranges
-    prof.set_xlim([0, 1])
-    if demo_ranges:
-        # DEMO : Fixed ranges for comparison
-        prof.set_ylim([0, 0.5])
-    else:
-        # Adapatative ranges
-        prof.set_ylim([0, prof.get_ylim()[1]])
-
-
 def plot_vacuum_vessel(axis, mfile_data, plot_data, scan):
     """Function to plot vacuum vessel
 
@@ -1305,54 +1303,45 @@ def plot_vacuum_vessel(axis, mfile_data, plot_data, scan):
 
     i_single_null = mfile_data.data["i_single_null"].get_scan(scan)
     triang = mfile_data.data["triang95"].get_scan(scan)
-    temp_array_1 = ()
-    temp_array_2 = ()
+
+    d_vv_rb = cumulative_radial_build("d_vv_out", mfile_data, plot_data, scan)
+    gapds_rb = cumulative_radial_build("gapds", mfile_data, plot_data, scan)
+    shldoth_rb = cumulative_radial_build("shldoth", mfile_data, plot_data, scan)
+    d_vv_in_rb = cumulative_radial_build("d_vv_in", mfile_data, plot_data, scan)
 
     # Outer side (furthest from plasma)
-    radx = (
-        cumulative_radial_build("d_vv_out", mfile_data, plot_data, scan)
-        + cumulative_radial_build("gapds", mfile_data, plot_data, scan)
-    ) / 2.0
-    rminx = (
-        cumulative_radial_build("d_vv_out", mfile_data, plot_data, scan)
-        - cumulative_radial_build("gapds", mfile_data, plot_data, scan)
-    ) / 2.0
-
-    kapx = cumulative_upper["d_vv_top"] / rminx
-
-    if i_single_null == 1:
-        (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        temp_array_1 = (*temp_array_1, rs, zs)
-
-    kapx = cumulative_lower["d_vv_bot"] / rminx
-    (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-    temp_array_2 = (*temp_array_2, rs, zs)
+    radx1 = (d_vv_rb + gapds_rb) / 2.0
+    rminx1 = (d_vv_rb - gapds_rb) / 2.0
 
     # Inner side (nearest to the plasma)
-    radx = (
-        cumulative_radial_build("shldoth", mfile_data, plot_data, scan)
-        + cumulative_radial_build("d_vv_in", mfile_data, plot_data, scan)
-    ) / 2.0
-    rminx = (
-        cumulative_radial_build("shldoth", mfile_data, plot_data, scan)
-        - cumulative_radial_build("d_vv_in", mfile_data, plot_data, scan)
-    ) / 2.0
-
-    if i_single_null == 1:
-        kapx = (cumulative_upper["d_vv_top"] - upper["d_vv_top"]) / rminx
-        (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-        temp_array_1 = (*temp_array_1, rs, zs)
-
-    kapx = (cumulative_lower["d_vv_bot"] + lower["d_vv_bot"]) / rminx
-    (rs, zs) = plotdh(axis, radx, rminx, triang, kapx)
-    temp_array_2 = (*temp_array_2, rs, zs)
+    radx2 = (shldoth_rb + d_vv_in_rb) / 2.0
+    rminx2 = (shldoth_rb, -d_vv_in_rb) / 2.0
 
     # Single null: Draw top half from output
     # Double null: Reflect bottom half to top
     if i_single_null == 1:
-        rs = np.concatenate([temp_array_1[0], temp_array_1[2][::-1]])
-        zs = np.concatenate([temp_array_1[1], temp_array_1[3][::-1]])
+        rs, zs = list(zip(plotdh(axis, radx1, rminx1, triang, cumulative_upper["d_vv_top"] / rminx1),
+        plotdh(
+                axis,
+                radx2,
+                rminx2,
+                triang,
+                (cumulative_upper["d_vv_top"] - upper["d_vv_top"]) / rminx2,
+            )))
+        rs = np.concatenate([rs[0], rs[1][::-1]])
+        zs = np.concatenate([zs[0], zs[1][::-1]])
         axis.fill(rs, zs, color=vessel)
+
+    temp_array_2 = (
+        *plotdh(axis, radx1, rminx1, triang, cumulative_lower["d_vv_bot"] / rminx1),
+        *plotdh(
+            axis,
+            radx2,
+            rminx2,
+            triang,
+            (cumulative_lower["d_vv_bot"] + lower["d_vv_bot"]) / rminx2,
+        ),
+    )
 
     rs = np.concatenate([temp_array_2[0], temp_array_2[2][::-1]])
     zs = np.concatenate([temp_array_2[1], temp_array_2[3][::-1]])
@@ -1574,19 +1563,6 @@ def plot_firstwall(axis, mfile_data, plot_data, scan):
         )
 
 
-def angle_check(angle1, angle2):
-    """Function to perform TF coil angle check"""
-    if angle1 > 1:
-        angle1 = 1
-    elif angle1 < -1:
-        angle1 = -1
-    if angle2 > 1:
-        angle2 = 1
-    elif angle2 < -1:
-        angle2 = -1
-    return angle1, angle2
-
-
 def plot_tf_coils(axis, mfile_data, plot_data, scan):
     """Function to plot TF coils
 
@@ -1596,7 +1572,6 @@ def plot_tf_coils(axis, mfile_data, plot_data, scan):
         scan --> scan number to use
 
     """
-
     tfcth = plot_data.tfcth
     rt = RTANGLE
     rt2 = 2 * rt
@@ -1829,22 +1804,28 @@ def plot_header(axis, mfile_data, scan):
         (f"!{dicts['DICT_OPTIMISATION_VARS'][minmax]}", "Optimising:", ""),
     ]
 
-    fimp_data = {
-        "D + T": mfile_data.data["fimp(01)"].get_scan(scan),
-        "He": mfile_data.data["fimp(02)"].get_scan(scan),
-        "Be": mfile_data.data["fimp(03)"].get_scan(scan),
-        "C": mfile_data.data["fimp(04)"].get_scan(scan),
-        "N": mfile_data.data["fimp(05)"].get_scan(scan),
-        "O": mfile_data.data["fimp(06)"].get_scan(scan),
-        "Ne": mfile_data.data["fimp(07)"].get_scan(scan),
-        "Si": mfile_data.data["fimp(08)"].get_scan(scan),
-        "Ar": mfile_data.data["fimp(09)"].get_scan(scan),
-        "Fe": mfile_data.data["fimp(10)"].get_scan(scan),
-        "Ni": mfile_data.data["fimp(11)"].get_scan(scan),
-        "Kr": mfile_data.data["fimp(12)"].get_scan(scan),
-        "Xe": mfile_data.data["fimp(13)"].get_scan(scan),
-        "W": mfile_data.data["fimp(14)"].get_scan(scan),
-    }
+    impurities = (
+        "D + T",
+        "He",
+        "Be",
+        "C",
+        "N",
+        "O",
+        "Ne",
+        "Si",
+        "Ar",
+        "Fe",
+        "Ni",
+        "Kr",
+        "Xe",
+        "W",
+    )
+    fimp_data = dict(
+        zip(
+            impurities,
+            get_imp_frac(mfile_data, scan),
+        )
+    )
 
     data = [("", "", ""), ("", "", "")]
 
@@ -1929,7 +1910,9 @@ def plot_physics_info(axis, mfile_data, scan):
     dene = mfile_data.data["dene"].get_scan(scan)
     dnz = mfile_data.data["dnz"].get_scan(scan) / dene
 
-    tepeak = mfile_data.data["te0"].get_scan(scan) / mfile_data.data["te"].get_scan(scan)
+    tepeak = mfile_data.data["te0"].get_scan(scan) / mfile_data.data["te"].get_scan(
+        scan
+    )
     nepeak = mfile_data.data["ne0"].get_scan(scan) / dene
 
     # Assume Martin scaling if pthresh is not printed
@@ -2033,9 +2016,9 @@ def plot_magnetics_info(axis, mfile_data, scan):
         else "Resistive"
     )
 
-    vssoft = mfile_data.data["vsres"].get_scan(scan) + mfile_data.data["vsind"].get_scan(
-        scan
-    )
+    vssoft = mfile_data.data["vsres"].get_scan(scan) + mfile_data.data[
+        "vsind"
+    ].get_scan(scan)
 
     sig_case = 1.0e-6 * mfile_data.data[f"sig_tf_tresca_max({i_tf_bucking})"].get_scan(
         scan
@@ -2251,7 +2234,11 @@ def plot_current_drive_info(axis, mfile_data, scan):
     data += [
         ("powerht", "Plasma heating used for H factor", "MW"),
         (pdivr, r"$\frac{P_{\mathrm{div}}}{R_{0}}$", "MW m$^{-1}$"),
-        (pdivnr, r"$\frac{P_{\mathrm{div}}}{<n> R_{0}}$", r"$\times 10^{-20}$ MW m$^{2}$"),
+        (
+            pdivnr,
+            r"$\frac{P_{\mathrm{div}}}{<n> R_{0}}$",
+            r"$\times 10^{-20}$ MW m$^{2}$",
+        ),
         (flh, r"$\frac{P_{\mathrm{div}}}{P_{\mathrm{LH}}}$", ""),
         (hstar, "H* (non-rad. corr.)", ""),
     ]
@@ -2273,6 +2260,27 @@ def plot_current_drive_info(axis, mfile_data, scan):
     )
 
     plot_info(axis, data, mfile_data, scan)
+
+
+def get_imp_frac(mfile_data, scan):
+    return np.array(
+        [
+            mfile_data.data["fimp(01)"].get_scan(scan),
+            mfile_data.data["fimp(02)"].get_scan(scan),
+            mfile_data.data["fimp(03)"].get_scan(scan),
+            mfile_data.data["fimp(04)"].get_scan(scan),
+            mfile_data.data["fimp(05)"].get_scan(scan),
+            mfile_data.data["fimp(06)"].get_scan(scan),
+            mfile_data.data["fimp(07)"].get_scan(scan),
+            mfile_data.data["fimp(08)"].get_scan(scan),
+            mfile_data.data["fimp(09)"].get_scan(scan),
+            mfile_data.data["fimp(10)"].get_scan(scan),
+            mfile_data.data["fimp(11)"].get_scan(scan),
+            mfile_data.data["fimp(12)"].get_scan(scan),
+            mfile_data.data["fimp(13)"].get_scan(scan),
+            mfile_data.data["fimp(14)"].get_scan(scan),
+        ]
+    )
 
 
 def main_plot(
@@ -2337,7 +2345,9 @@ def main_plot(
     if imp.is_dir():
         # plot_qprofile(plot_6)
         plot_6 = fig2.add_subplot(236)  # , aspect=2)
-        plot_radprofile(plot_6, m_file_data, plot_data, scan, imp, demo_ranges)
+        plot_radprofile(
+            plot_6, get_imp_frac(m_file_data, scan), plot_data, imp, demo_ranges
+        )
 
     # Setup params for text plots
     plt.rcParams.update({"font.size": 8})
