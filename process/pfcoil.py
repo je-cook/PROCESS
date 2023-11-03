@@ -1426,12 +1426,9 @@ class PFCoil:
         else:
             pf.nef = pfv.ncirt - 2
 
-        pfv.vsefsu = 0.0e0
-
-        for i in range(pf.nef):
-            pf.vsdum[i, 0] = pfv.sxlg[pfv.ncirt - 1, i] * pfv.cpt[i, 1]
-            pf.vsdum[i, 1] = pfv.sxlg[pfv.ncirt - 1, i] * pfv.cpt[i, 2]
-            pfv.vsefsu = pfv.vsefsu + (pf.vsdum[i, 1] - pf.vsdum[i, 0])
+        pf.vsdum[:pf.nef, 0] = pfv.sxlg[pfv.ncirt - 1, :pf.nef] * pfv.cpt[:pf.nef, 1]
+        pf.vsdum[:pf.nef, 1] = pfv.sxlg[pfv.ncirt - 1, :pf.nef] * pfv.cpt[:pf.nef, 2]
+        pfv.vsefsu = np.sum(pf.vsdum[:pf.nef, 1] - pf.vsdum[:pf.nef, 0], axis=0)
 
         # Central Solenoid startup volt-seconds
         if bv.iohcl != 0:
