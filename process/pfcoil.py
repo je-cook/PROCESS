@@ -145,14 +145,10 @@ class PFCoil:
                 eh.report_error(66)
 
             # Symmetric up/down Central Solenoid : Find (R,Z) and current of each filament at BOP
-
-            for nng in range(pfv.nfxfh):
-                pf.rfxf[nng] = pfv.rohc
-                pf.rfxf[nng + pfv.nfxfh] = pf.rfxf[nng]
-                pf.zfxf[nng] = bv.hmax * pfv.ohhghf / pfv.nfxfh * ((nng + 1) - 0.5e0)
-                pf.zfxf[nng + pfv.nfxfh] = -pf.zfxf[nng]
-                pf.cfxf[nng] = -ioheof / pf.nfxf * pfv.fcohbop
-                pf.cfxf[nng + pfv.nfxfh] = pf.cfxf[nng]
+            pf.rfxf[:2 * pfv.nfxfh] = pfv.rohc
+            pf.cfxf[:2 * pfv.nfxfh] = -ioheof / pf.nfxf * pfv.fcohbop
+            pf.zfxf[:pfv.nfxfh] = bv.hmax * pfv.ohhghf / pfv.nfxfh * ((np.arange(pfv.nfxfh) + 1) - 0.5e0)
+            pf.zfxf[pfv.nfxfh: 2*pfv.nfxfh] = -pf.zfxf[:pfv.nfxfh]
 
         # Scale PF coil locations
         signn[0] = 1.0e0
