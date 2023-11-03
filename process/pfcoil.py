@@ -943,10 +943,10 @@ class PFCoil:
             nrws, np.asfortranarray(gmat), truth, truth
         )
 
-        for i in range(ngrp):
-            work2[i] = 0.0e0
-            for j in range(nrws):
-                work2[i] = work2[i] + umat[j, i] * bvec[j]
+        work2[:ngrp] = 0.0e0
+
+        for j in range(nrws):
+            work2[:ngrp] = work2[:ngrp] + umat[j, :ngrp] * bvec[j]
 
         # Compute currents
         for i in range(ngrp):
