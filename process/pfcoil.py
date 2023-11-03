@@ -1720,9 +1720,8 @@ class PFCoil:
             )
 
             # Central Solenoid / PF coil mutual inductances
-            for i in range(noh):
-                rc[i] = roh[i]
-                zc[i] = zoh[i]
+            rc[:noh] = roh[:noh]
+            zc[:noh] = zoh[:noh]
 
             ncoils = 0
             for i in range(pfv.ngrp):
