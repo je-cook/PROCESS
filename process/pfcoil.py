@@ -2604,7 +2604,9 @@ class PFCoil:
                     pfv.cpt[k, jjj] * pfv.turns[k],
                 )
 
-    def selfinductance(self, a, b, c, N):
+    @staticmethod
+    @numba.njit(cache=True)
+    def selfinductance(a, b, c, N):
         """Calculates the selfinductance using Bunet's formula.
 
         author: M. Kovari, CCFE
