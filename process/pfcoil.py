@@ -186,9 +186,9 @@ class PFCoil:
                                 bv.hpfu - 2.0e0 * bv.hpfdif + 0.86e0
                             )
                             top_bottom = 1
-
-            elif pfv.ipfloc[j] == 3:
-                # PF coil is radially outside the TF coil
+        if any(stacked_pf_tf_rad := np.nonzero(pfv.ipfloc[:pfv.ngrp] == 3)[0]):
+            # PF coil is radially outside the TF coil
+            for j in stacked_pf_tf_rad:
                 for k in range(pfv.ncls[j]):
                     pf.zcls[j, k] = pv.rminor * pfv.zref[j] * signn[k]
                     # Coil radius follows TF coil curve for SC TF (D-shape)
