@@ -94,15 +94,14 @@ class PFCoil:
 
         # Total the number of PF coils in all groups, and check that none
         # exceeds the limit
-        pfv.nohc = 0
-        for i in range(pfv.ngrp):
-            if pfv.ncls[i] > pfv.nclsmx:
+        if exceeds_limit := np.nonzero(pfv.ncls[:pfv.ngrp] > pfv.nclsmx)[0]:
+            for i in exceeds_limit:
                 eh.idiags[0] = i
                 eh.idiags[1] = pfv.ncls[i]
                 eh.idiags[2] = pfv.nclsmx
                 eh.report_error(65)
 
-            pfv.nohc = pfv.nohc + pfv.ncls[i]
+        pfv.nohc = np.sum(pfv.ncls[:pfv.ngrp], axis=0)
 
         # Add one if an Central Solenoid is present, and make an extra group
         if bv.iohcl != 0:
