@@ -2665,13 +2665,11 @@ class PFCoil:
             ):
                 pfv.ric[ic] = pfv.curpfb[ic]
 
-            # Set normalized current waveforms
-            pfv.waves[ic, 0] = 0.0e0
-            pfv.waves[ic, 1] = pfv.curpfs[ic] / pfv.ric[ic]
-            pfv.waves[ic, 2] = pfv.curpff[ic] / pfv.ric[ic]
-            pfv.waves[ic, 3] = pfv.curpff[ic] / pfv.ric[ic]
-            pfv.waves[ic, 4] = pfv.curpfb[ic] / pfv.ric[ic]
-            pfv.waves[ic, 5] = 0.0e0
+        # Set normalized current waveforms
+        pfv.waves[:pfv.nohc, 1] = pfv.curpfs[:pfv.nohc] / pfv.ric[:pfv.nohc]
+        pfv.waves[:pfv.nohc, 2] = pfv.curpff[:pfv.nohc] / pfv.ric[:pfv.nohc]
+        pfv.waves[:pfv.nohc, 3] = pfv.curpff[:pfv.nohc] / pfv.ric[:pfv.nohc]
+        pfv.waves[:pfv.nohc, 4] = pfv.curpfb[:pfv.nohc] / pfv.ric[:pfv.nohc]
 
     def superconpf(
         self, bmax, fhe, fcu, jwp, isumat, fhts, strain, thelium, bcritsc, tcritsc
