@@ -1695,13 +1695,11 @@ class PFCoil:
         ncoils = 0
 
         for i in range(pfv.ngrp):
-            xpfpl = 0.0
             ncoils = ncoils + pfv.ncls[i]
             rp = pfv.rpf[ncoils - 1]
             zp = pfv.zpf[ncoils - 1]
             xc, br, bz, psi = bfield(rc, zc, cc, rp, zp)
-            for ii in range(nplas):
-                xpfpl = xpfpl + xc[ii]
+            xpfpl = np.sum(xc[:nplas], axis=0)
 
             for j in range(pfv.ncls[i]):
                 ncoilj = ncoils + 1 - (j + 1)
