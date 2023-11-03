@@ -169,9 +169,9 @@ class PFCoil:
                         + 0.1e0
                         + 0.5e0 * (bv.hmax * (1.0e0 - pfv.ohhghf) + bv.tfcth + 0.1e0)
                     )
-
-            elif pfv.ipfloc[j] == 2:
-                # PF coil is on top of the TF coil
+        if any(stacked_pf_tf := np.nonzero(pfv.ipfloc[:pfv.ngrp] == 2)[0]):
+            # PF coil is on top of the TF coil
+            for j in stacked_pf_tf:
                 for k in range(pfv.ncls[j]):
                     pf.rcls[j, k] = pv.rmajor + pfv.rpf2 * pv.triang * pv.rminor
                     if pv.itart == 1 and pv.itartpf == 0:
