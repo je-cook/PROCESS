@@ -423,8 +423,7 @@ class PFCoil:
                     work2,
                 )
 
-                for ccount in range(ngrp0):
-                    pf.ccls[pcls0[ccount] - 1] = pf.ccls0[ccount]
+                pf.ccls[pcls0[:ngrp0] - 1] = pf.ccls0[:ngrp0]
 
         # Flux swing from vertical field
 
