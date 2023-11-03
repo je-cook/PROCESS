@@ -1344,9 +1344,8 @@ class PFCoil:
 
         bpfin = math.sqrt(bri**2 + bzi**2)
         bpfout = math.sqrt(bro**2 + bzo**2)
-        for n in range(pfv.ncls[ii - 1]):
-            pfv.bpf[i - 1 + n] = bpfin
-            pf.bpf2[i - 1 + n] = bpfout
+        pfv.bpf[i - 1: i - 1 + pfv.ncls[ii - 1]] = bpfin
+        pf.bpf2[i - 1: i - 1 + pfv.ncls[ii - 1]] = bpfout
 
         return bri, bro, bzi, bzo
 
