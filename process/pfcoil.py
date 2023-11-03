@@ -1638,8 +1638,7 @@ class PFCoil:
             delzoh = (
                 2.0e0 * pfv.zh[pfv.nohc - 1] / noh
             )  # zh(nohc) is the half-height of the coil
-            for i in range(noh):
-                zoh[i] = pfv.zh[pfv.nohc - 1] - delzoh * (0.5e0 + i)
+            zoh[:noh] = pfv.zh[pfv.nohc - 1] - delzoh * (0.5e0 + np.arange(noh))
 
         rplasma[0] = pv.rmajor  # assumes nplas==1
         zplasma[0] = 0.0
