@@ -1460,7 +1460,8 @@ class PFCoil:
         pfv.vseft = pfv.vsefsu + pfv.vsefbn
         pfv.vsoh = pfv.vsohbn + pfv.vsohsu
 
-    def hoop_stress(self, r):
+    @staticmethod
+    def hoop_stress(r):
         """Calculation of hoop stress of central solenoid.
 
         author: J Morris, CCFE, Culham Science Centre
