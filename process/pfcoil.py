@@ -1626,15 +1626,11 @@ class PFCoil:
             eh.fdiags[0] = bv.ohcth
             eh.report_error(73)
 
-        noh = min(noh, nohmax)
-
         # TODO In FNSF case, noh = -7! noh should always be positive. Fortran
         # array allocation with -ve bound previously coerced to 0
-        if noh < 0:
-            noh = 0
+        noh = max(0, min(noh, nohmax))
 
-        roh = np.zeros(noh)
-        zoh = np.zeros(noh)
+        roh, zoh = np.zeros((2,noh))
 
         if bv.iohcl != 0:
             roh[:] = pfv.rohc
