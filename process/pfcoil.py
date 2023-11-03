@@ -2624,15 +2624,15 @@ class PFCoil:
         :return selfinductance: the self inductance in Henries
         :rtype: float
         """
-        selfinductance = (
+        return (
             (1.0e-6 / 0.0254e0)
             * a**2
             * N**2
             / (9.0e0 * a + 10.0e0 * b + 8.4e0 * c + 3.2e0 * c * b / a)
         )
-        return selfinductance
 
-    def waveform(self):
+    @staticmethod
+    def waveform():
         """Sets up the PF coil waveforms.
 
         author: P J Knight, CCFE, Culham Science Centre
