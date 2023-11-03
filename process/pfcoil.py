@@ -1653,9 +1653,8 @@ class PFCoil:
         # [Revised], Rosa and Grover, Scientific papers of the Bureau of Standards,
         # No. 169, 3rd ed., 1916. page 33
 
-        for i in range(nplas):
-            rc[i] = rplasma[i]
-            zc[i] = zplasma[i]
+        rc[:nplas] = rplasma[:nplas]
+        zc[:nplas] = zplasma[:nplas]
 
         if bv.iohcl != 0:
             xohpl = 0.0
