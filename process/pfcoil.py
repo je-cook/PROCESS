@@ -158,15 +158,13 @@ class PFCoil:
         # Place the PF coils:
 
         # N.B. Problems here if k=ncls(group) is greater than 2.
-        for j in range(pfv.ngrp):
-            if pfv.ipfloc[j] == 1:
-                # PF coil is stacked on top of the Central Solenoid
-                for k in pfv.ncls[j]:
-                    pf.rcls[j, k] = pfv.rohc + pfv.rpf1
+        if any(stacked_pf_cs := np.nonzero(pfv.ipfloc[:pfv.ngrp] == 1)[0]):
+            # PF coil is stacked on top of the Central Solenoid
+            pf.rcls[stacked_pf_cs, pfv.ncls[stacked_pf_cs]] = pfv.rohc + pfv.rpf1
 
-                    # Z coordinate of coil enforced so as not
-                    # to occupy the same space as the Central Solenoid
-                    pf.zcls[j, k] = signn[k] * (
+            # Z coordinate of coil enforced so as not
+            # to occupy the same space as the Central Solenoid
+            pf.zcls[stacked_pf_cs, pfv.ncls[stacked_pf_cs]] = signn[None, pfv.ncls[stacked_pf_cs]] * (
                         bv.hmax * pfv.ohhghf
                         + 0.1e0
                         + 0.5e0 * (bv.hmax * (1.0e0 - pfv.ohhghf) + bv.tfcth + 0.1e0)
