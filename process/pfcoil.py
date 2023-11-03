@@ -910,7 +910,8 @@ class PFCoil:
                         if pf_tf_collision >= 1:
                             eh.report_error(277)
 
-    def solv(self, ngrpmx, ngrp, nrws, gmat, bvec):
+    @staticmethod
+    def solv(ngrpmx, ngrp, nrws, gmat, bvec):
         """Solve a matrix using singular value decomposition.
 
         This routine solves the matrix equation for calculating the
