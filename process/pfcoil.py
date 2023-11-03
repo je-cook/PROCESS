@@ -1451,10 +1451,8 @@ class PFCoil:
             pfv.vsohbn = pf.vsdum[pfv.nohc - 1, 2] - pf.vsdum[pfv.nohc - 1, 1]
 
         # PF volt-seconds during burn
-        pfv.vsefbn = 0.0e0
-        for i in range(pf.nef):
-            pf.vsdum[i, 2] = pfv.sxlg[pfv.ncirt - 1, i] * pfv.cpt[i, 4]
-            pfv.vsefbn = pfv.vsefbn + (pf.vsdum[i, 2] - pf.vsdum[i, 1])
+        pf.vsdum[:pf.nef, 2] = pfv.sxlg[pfv.ncirt - 1, :pf.nef] * pfv.cpt[:pf.nef, 4]
+        pfv.vsefbn = np.sum(pf.vsdum[:pf.nef, 2] - pf.vsdum[:pf.nef, 1], axis=0)
 
         pfv.vsbn = pfv.vsohbn + pfv.vsefbn
 
