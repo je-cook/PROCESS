@@ -211,9 +211,8 @@ class PFCoil:
                 # PF coil is in general location
                 # See issue 1418
                 # https://git.ccfe.ac.uk/process/process/-/issues/1418
-                for k in range(pfv.ncls[j]):
-                    pf.zcls[j, k] = pv.rminor * pfv.zref[j] * signn[k]
-                    pf.rcls[j, k] = pv.rminor * pfv.rref[j] + pv.rmajor
+                pf.zcls[j, :pfv.ncls[j]] = pv.rminor * pfv.zref[j] * signn[:pfv.ncls[j]]
+                pf.rcls[j, :pfv.ncls[j]] = pv.rminor * pfv.rref[j] + pv.rmajor
 
             else:
                 eh.idiags[0] = j
