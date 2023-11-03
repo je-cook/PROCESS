@@ -1600,14 +1600,9 @@ class PFCoil:
         br = 0.0
         bz = 0.0
         psi = 0.0
-        rc = np.zeros(pfv.ngc2 + nohmax)
-        zc = np.zeros(pfv.ngc2 + nohmax)
-        xc = np.zeros(pfv.ngc2 + nohmax)
-        cc = np.zeros(pfv.ngc2 + nohmax)
-        xcin = np.zeros(pfv.ngc2 + nohmax)
-        xcout = np.zeros(pfv.ngc2 + nohmax)
-        rplasma = np.zeros(nplas)
-        zplasma = np.zeros(nplas)
+        rc, zc, xc, cc = np.zeros((4, pfv.ngc2 + nohmax))
+        xcin, xcout = np.zeros((2, pfv.ngc2 + nohmax))
+        rplasma, zplasma = np.zeros((2, nplas))
 
         pfv.sxlg[:, :] = 0.0
 
