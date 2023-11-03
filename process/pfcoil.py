@@ -717,14 +717,9 @@ class PFCoil:
             self.ohcalc()
 
         # Summation of weights and current
-        pfv.whtpf = 0.0e0
-        pfv.whtpfs = 0.0e0
-        pf.ricpf = 0.0e0
-
-        for i in range(pfv.nohc):
-            pfv.whtpf = pfv.whtpf + pfv.wtc[i]
-            pfv.whtpfs = pfv.whtpfs + pfv.wts[i]
-            pf.ricpf = pf.ricpf + abs(pfv.ric[i])
+        pfv.whtpf = np.sum(pfv.wtc[:pfv.nohc], axis=0)
+        pfv.whtpfs = np.sum(pfv.wts[:pfv.nohc], axis=0)
+        pfv.ricpf = np.sum(abs(pfv.ric[:pfv.nohc]), axis=0)
 
         # Plasma size and shape
         pfv.zh[pfv.nohc] = pv.rminor * pv.kappa
