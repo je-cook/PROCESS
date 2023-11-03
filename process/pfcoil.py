@@ -2641,9 +2641,9 @@ class PFCoil:
         normalized to the peak current in that coil at any time.
         AEA FUS 251: A User's Guide to the PROCESS Systems Code
         """
-        nplas = pfv.nohc + 1
-        for it in range(6):
-            pfv.waves[nplas - 1, it] = 1.0e0
+        # nplas + 1
+        pfv.waves[:pfv.nohc, [1,2,3,4]] = 1.0e0
+        pfv.waves[:pfv.nohc, [0, 5]] = 0.0e0
 
         for ic in range(pfv.nohc):
             # Find where the peak current occurs
