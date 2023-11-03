@@ -1163,7 +1163,7 @@ class StTfCentrepostFastNeutFluxParam(NamedTuple):
     ),
 )
 def test_st_tf_centrepost_fast_neut_flux(
-    sttfcentrepostfastneutfluxparam, monkeypatch, ccfe_hcpb
+    sttfcentrepostfastneutfluxparam, ccfe_hcpb
 ):
     """
     Automatically generated Regression Unit Test for st_tf_centrepost_fast_neut_flux.
@@ -1177,14 +1177,11 @@ def test_st_tf_centrepost_fast_neut_flux(
     :type monkeypatch: _pytest.monkeypatch.monkeypatch
     """
 
-    monkeypatch.setattr(
-        tfcoil_variables, "i_tf_sup", sttfcentrepostfastneutfluxparam.i_tf_sup
-    )
-
     neut_flux_cp = ccfe_hcpb.st_tf_centrepost_fast_neut_flux(
         pneutmw=sttfcentrepostfastneutfluxparam.pneutmw,
         sh_width=sttfcentrepostfastneutfluxparam.sh_width,
         rmajor=sttfcentrepostfastneutfluxparam.rmajor,
+        i_tf_sup=sttfcentrepostfastneutfluxparam.i_tf_sup,
     )
 
     assert neut_flux_cp == pytest.approx(
@@ -1232,7 +1229,7 @@ class StCentrepostNuclearHeatingParam(NamedTuple):
     ),
 )
 def test_st_centrepost_nuclear_heating(
-    stcentrepostnuclearheatingparam, monkeypatch, ccfe_hcpb
+    stcentrepostnuclearheatingparam, ccfe_hcpb
 ):
     """
     Automatically generated Regression Unit Test for st_centrepost_nuclear_heating.
@@ -1246,17 +1243,11 @@ def test_st_centrepost_nuclear_heating(
     :type monkeypatch: _pytest.monkeypatch.monkeypatch
     """
 
-    monkeypatch.setattr(
-        physics_variables, "rmajor", stcentrepostnuclearheatingparam.rmajor
-    )
-
-    monkeypatch.setattr(
-        tfcoil_variables, "i_tf_sup", stcentrepostnuclearheatingparam.i_tf_sup
-    )
-
     pnuc_cp_tf, pnuc_cp_sh, pnuc_cp = ccfe_hcpb.st_centrepost_nuclear_heating(
         pneut=stcentrepostnuclearheatingparam.pneut,
         sh_width=stcentrepostnuclearheatingparam.sh_width,
+        rmajor=stcentrepostnuclearheatingparam.rmajor,
+        i_tf_sup=stcentrepostnuclearheatingparam.i_tf_sup
     )
 
     assert pnuc_cp_tf == pytest.approx(
