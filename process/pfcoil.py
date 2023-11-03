@@ -241,11 +241,10 @@ class PFCoil:
             drpt = 2.0e0 * pv.rminor / (npts - 1)
             rpt0 = pv.rmajor - pv.rminor
 
-            for i in range(npts):
-                rpts[i] = rpt0 + (i) * drpt
-                zpts[i] = 0.0e0
-                brin[i] = 0.0e0
-                bzin[i] = 0.0e0
+            rpts[:npts] = rpt0 + np.arange(npts) * drpt
+            zpts[:npts] = 0.0e0
+            brin[:npts] = 0.0e0
+            bzin[:npts] = 0.0e0
 
                 # Calculate currents in coils to produce the given field
             pf.ssq0, pf.ccl0 = self.efc(
