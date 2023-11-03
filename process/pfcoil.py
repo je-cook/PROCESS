@@ -1525,13 +1525,11 @@ class PFCoil:
             * ((1.0e0 + 3.0e0 * tfv.poisson_steel) / (3.0e0 + tfv.poisson_steel))
         )
 
-        s_hoop_nom = hp_term_1 * hp_term_2 - hp_term_3 * hp_term_4
+        # s_hoop = s_hoop_nom / oh_steel_frac
+        return (hp_term_1 * hp_term_2 - hp_term_3 * hp_term_4) / pfv.oh_steel_frac
 
-        s_hoop = s_hoop_nom / pfv.oh_steel_frac
-
-        return s_hoop
-
-    def axial_stress(self):
+    @staticmethod
+    def axial_stress():
         """Calculation of axial stress of central solenoid.
 
         author: J Morris, CCFE, Culham Science Centre
