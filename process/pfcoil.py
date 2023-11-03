@@ -2785,8 +2785,7 @@ class PFCoil:
             if ml.variable_error(jcrit0):  # superconductors.GL_REBCO has failed.
                 print(f"deltaj_gl_REBCO: {bmax=} {temperature=} {jcrit0=}")
 
-            deltaj_gl_rebco = jcrit0 - jsc
-            return deltaj_gl_rebco
+            return jcrit0 - jsc
 
         def deltaj_hijc_rebco(temperature):
             """Critical current density and current density difference in high current density REBCO.
