@@ -730,11 +730,9 @@ class PFCoil:
 
         # Generate coil currents as a function of time using
         # user-provided waveforms etc. (cptdin, fcohbop, fcohbof)
-        for k in range(6):  # time points
-            for i in range(pfv.ncirt - 1):
-                pfv.cpt[i, k] = pfv.waves[i, k] * math.copysign(
-                    pfv.cptdin[i], pfv.ric[i]
-                )
+        pfv.cpt[:pfv.ncirt - 1, :6] = pfv.waves[:pfv.ncirt - 1, :6] * np.copysign(
+                pfv.cptdin[:pfv.ncirt - 1], pfv.ric[:pfv.ncirt - 1]
+            )[:, None]
 
         # Plasma wave form
         pfv.cpt[pfv.ncirt - 1, 0] = 0.0e0
