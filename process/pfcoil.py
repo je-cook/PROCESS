@@ -204,8 +204,8 @@ class PFCoil:
                                 "Element of pf.rcls is inf. Kludging to 1e10."
                             )
                             pf.rcls[j, k] = 1e10
-
-            elif pfv.ipfloc[j] == 4:
+        if any(general_pf := np.nonzero(pfv.ipfloc[:pfv.ngrp] == 4)[0]):
+            for j in general_pf:
                 # PF coil is in general location
                 # See issue 1418
                 # https://git.ccfe.ac.uk/process/process/-/issues/1418
