@@ -1595,9 +1595,6 @@ class PFCoil:
         nohmax = 200
         nplas = 1
 
-        br = 0.0
-        bz = 0.0
-        psi = 0.0
         rc, zc, xc, cc = np.zeros((4, pfv.ngc2 + nohmax))
         xcin, xcout = np.zeros((2, pfv.ngc2 + nohmax))
         rplasma, zplasma = np.zeros((2, nplas))
@@ -1672,8 +1669,8 @@ class PFCoil:
 
                 reqv = rp * (1.0e0 + delzoh**2 / (24.0e0 * rp**2))
 
-                xcin, br, bz, psi = bfield(rc, zc, cc, reqv - deltar, zp)
-                xcout, br, bz, psi = bfield(rc, zc, cc, reqv + deltar, zp)
+                xcin, _br, _bz, _psi = bfield(rc, zc, cc, reqv - deltar, zp)
+                xcout, _br, _bz, _psi = bfield(rc, zc, cc, reqv + deltar, zp)
 
                 for ii in range(nplas):
                     xc[ii] = 0.5e0 * (xcin[ii] + xcout[ii])
@@ -1696,7 +1693,7 @@ class PFCoil:
             ncoils = ncoils + pfv.ncls[i]
             rp = pfv.rpf[ncoils - 1]
             zp = pfv.zpf[ncoils - 1]
-            xc, br, bz, psi = bfield(rc, zc, cc, rp, zp)
+            xc, _br, _bz, _psi = bfield(rc, zc, cc, rp, zp)
             xpfpl = np.sum(xc[:nplas], axis=0)
 
             for j in range(pfv.ncls[i]):
@@ -1727,7 +1724,7 @@ class PFCoil:
                 ncoils = ncoils + pfv.ncls[i]
                 rp = pfv.rpf[ncoils - 1]
                 zp = pfv.zpf[ncoils - 1]
-                xc, br, bz, psi = bfield(rc, zc, cc, rp, zp)
+                xc, _br, _bz, _psi = bfield(rc, zc, cc, rp, zp)
                 for ii in range(noh):
                     xohpf = xohpf + xc[ii]
 
@@ -1748,17 +1745,14 @@ class PFCoil:
 
         for i in range(pf.nef):
             for j in range(pf.nef - 1):
-                if j >= i:
-                    jj = j + 1 + 1
-                else:
-                    jj = j + 1
+                jj = j + 2 if j >= i else j + 1
 
                 zc[j] = pfv.zpf[jj - 1]
                 rc[j] = pfv.rpf[jj - 1]
 
             rp = pfv.rpf[i]
             zp = pfv.zpf[i]
-            xc, br, bz, psi = bfield(rc, zc, cc, rp, zp)
+            xc, _br, _bz, _psi = bfield(rc, zc, cc, rp, zp)
             for k in range(pf.nef):
                 if k < i:
                     pfv.sxlg[i, k] = xc[k] * pfv.turns[k] * pfv.turns[i]
