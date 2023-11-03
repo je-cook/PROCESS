@@ -2769,8 +2769,7 @@ class PFCoil:
             if ml.variable_error(jcrit0):  # GL_Nbti has failed.
                 print(f"deltaj_GL_nbti: {bmax=} {temperature=} {jcrit0=}")
 
-            deltaj_gl_nbti = jcrit0 - jsc
-            return deltaj_gl_nbti
+            return jcrit0 - jsc
 
         def deltaj_gl_rebco(temperature):
             """Critical current density and current density difference in GL REBCO.
