@@ -2801,8 +2801,7 @@ class PFCoil:
             if ml.variable_error(jcrit0):  # superconductors.GL_REBCO has failed.
                 print(f"deltaj_hijc_REBCO: {bmax=} {temperature=} {jcrit0=}")
 
-            deltaj_hijc_rebco = jcrit0 - jsc
-            return deltaj_hijc_rebco
+            return jcrit0 - jsc
 
         # Find critical current density in superconducting strand, jcritstr
         if isumat == 1:
