@@ -368,12 +368,11 @@ class PFCoil:
                         eh.idiags[1] = pfv.ipfloc[i]
                         eh.report_error(70)
 
-                for ccount in range(ngrp0):
-                    ncls0[ccount] = 2
-                    pf.rcls0[ccount, 0] = pf.rcls[pcls0[ccount] - 1, 0]
-                    pf.rcls0[ccount, 1] = pf.rcls[pcls0[ccount] - 1, 1]
-                    pf.zcls0[ccount, 0] = pf.zcls[pcls0[ccount] - 1, 0]
-                    pf.zcls0[ccount, 1] = pf.zcls[pcls0[ccount] - 1, 1]
+                ncls0[:ngrp0] = 2
+                pf.rcls0[:ngrp0, 0] = pf.rcls[pcls0[:ngrp0] - 1, 0]
+                pf.rcls0[:ngrp0, 1] = pf.rcls[pcls0[:ngrp0] - 1, 1]
+                pf.zcls0[:ngrp0, 0] = pf.zcls[pcls0[:ngrp0] - 1, 0]
+                pf.zcls0[:ngrp0, 1] = pf.zcls[pcls0[:ngrp0] - 1, 1]
 
                 npts0 = 1
                 rpts[0] = pv.rmajor
