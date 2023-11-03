@@ -3115,69 +3115,59 @@ def bfield(rc, zc, cc, rp, zp):
 
     nc = len(rc)
 
-    xc = np.empty((nc,))
-    br = 0
-    bz = 0
-    psi = 0
+    d = (rp + rc[:nc]) ** 2 + (zp - zc[:nc]) ** 2
+    # Kludge: avoid s >= 1.0, a goes inf
+    s = np.clip(4.0 * rp * rc[:nc] / d, None, 0.999999)
 
-    for i in range(nc):
-        d = (rp + rc[i]) ** 2 + (zp - zc[i]) ** 2
-        s = 4.0 * rp * rc[i] / d
+    t = 1.0 - s
+    a = np.log(1.0 / t)
 
-        # Kludge: avoid s >= 1.0, a goes inf
-        if s > 0.999999:
-            s = 0.999999
+    dz = zp - zc[:nc]
+    zs = dz**2
+    dr = rp - rc[:nc]
+    sd = np.sqrt(d)
 
-        t = 1.0 - s
-        a = np.log(1.0 / t)
+    # Kludge to avoid NaNs
+    dr[dr == 0.0] = 1e-6
 
-        dz = zp - zc[i]
-        zs = dz**2
-        dr = rp - rc[i]
-        sd = np.sqrt(d)
+    #  Evaluation of elliptic integrals
 
-        if dr == 0.0:
-            # Kludge to avoid NaNs
-            dr = 1e-6
+    xk = (
+        a0
+        + t * (a1 + t * (a2 + t * (a3 + a4 * t)))
+        + a * (b0 + t * (b1 + t * (b2 + t * (b3 + b4 * t))))
+    )
+    xe = (
+        1.0
+        + t * (c1 + t * (c2 + t * (c3 + c4 * t)))
+        + a * t * (d1 + t * (d2 + t * (d3 + d4 * t)))
+    )
 
-        #  Evaluation of elliptic integrals
+    #  Mutual inductances
 
-        xk = (
-            a0
-            + t * (a1 + t * (a2 + t * (a3 + a4 * t)))
-            + a * (b0 + t * (b1 + t * (b2 + t * (b3 + b4 * t))))
-        )
-        xe = (
-            1.0
-            + t * (c1 + t * (c2 + t * (c3 + c4 * t)))
-            + a * t * (d1 + t * (d2 + t * (d3 + d4 * t)))
-        )
+    xc = 0.5 * RMU0 * sd * ((2.0 - s) * xk - 2.0 * xe)
 
-        #  Mutual inductances
+    #  Radial, vertical fields
 
-        xc[i] = 0.5 * RMU0 * sd * ((2.0 - s) * xk - 2.0 * xe)
+    brx = (
+        RMU0
+        * cc[:nc]
+        * dz
+        / (2 * np.pi * rp * sd)
+        * (-xk + (rc[:nc] ** 2 + rp**2 + zs) / (dr**2 + zs) * xe)
+    )
+    bzx = (
+        RMU0
+        * cc[:nc]
+        / (2 * np.pi * sd)
+        * (xk + (rc[:nc] ** 2 - rp**2 - zs) / (dr**2 + zs) * xe)
+    )
 
-        #  Radial, vertical fields
+    #  Sum fields, flux
 
-        brx = (
-            RMU0
-            * cc[i]
-            * dz
-            / (2 * np.pi * rp * sd)
-            * (-xk + (rc[i] ** 2 + rp**2 + zs) / (dr**2 + zs) * xe)
-        )
-        bzx = (
-            RMU0
-            * cc[i]
-            / (2 * np.pi * sd)
-            * (xk + (rc[i] ** 2 - rp**2 - zs) / (dr**2 + zs) * xe)
-        )
-
-        #  Sum fields, flux
-
-        br += brx
-        bz += bzx
-        psi += xc[i] * cc[i]
+    br = np.sum(brx, axis=0)
+    bz = np.sum(bzx, axis=0)
+    psi = np.sum(xc[:nc] * cc[:nc], axis=0)
 
     return xc, br, bz, psi
 
