@@ -166,19 +166,23 @@ class PFCoil:
 
             # Z coordinate of coil enforced so as not
             # to occupy the same space as the Central Solenoid
-            pf.zcls[stacked_pf_cs, pfv.ncls[stacked_pf_cs]] = signn[None, pfv.ncls[stacked_pf_cs]] * (
-                        bv.hmax * pfv.ohhghf
-                        + 0.1e0
-                        + 0.5e0 * (bv.hmax * (1.0e0 - pfv.ohhghf) + bv.tfcth + 0.1e0)
-                    )
-        if any(stacked_pf_tf := np.nonzero(pfv.ipfloc[:pfv.ngrp] == 2)[0]):
+            pf.zcls[stacked_pf_cs, pfv.ncls[stacked_pf_cs]] = signn[
+                None, pfv.ncls[stacked_pf_cs]
+            ] * (
+                bv.hmax * pfv.ohhghf
+                + 0.1e0
+                + 0.5e0 * (bv.hmax * (1.0e0 - pfv.ohhghf) + bv.tfcth + 0.1e0)
+            )
+        if any(stacked_pf_tf := np.nonzero(pfv.ipfloc[: pfv.ngrp] == 2)[0]):
             # PF coil is on top of the TF coil
             for j in stacked_pf_tf:
-                for k in range(pfv.ncls[j]):
-                    pf.rcls[j, k] = pv.rmajor + pfv.rpf2 * pv.triang * pv.rminor
-                    if pv.itart == 1 and pv.itartpf == 0:
-                        pf.zcls[j, k] = (bv.hmax - pfv.zref[j]) * signn[k]
-                    else:
+                pf.rcls[j, : pfv.ncls[j]] = pv.rmajor + pfv.rpf2 * pv.triang * pv.rminor
+                if pv.itart == 1 and pv.itartpf == 0:
+                    pf.zcls[j, : pfv.ncls[j]] = (bv.hmax - pfv.zref[j]) * signn[
+                        : pfv.ncls[j]
+                    ]
+                else:
+                    for k in range(pfv.ncls[j]):
                         # pf.zcls(j,k) = (bv.hmax + bv.tfcth + 0.86e0) * signn(k)
                         if top_bottom == 1:  # this coil is above midplane
                             pf.zcls[j, k] = bv.hpfu + 0.86e0
