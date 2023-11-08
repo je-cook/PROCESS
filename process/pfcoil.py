@@ -192,25 +192,24 @@ class PFCoil:
                                 bv.hpfu - 2.0e0 * bv.hpfdif + 0.86e0
                             )
                             top_bottom = 1
-        if any(stacked_pf_tf_rad := np.nonzero(pfv.ipfloc[:pfv.ngrp] == 3)[0]):
+        if any(stacked_pf_tf_rad := np.nonzero(pfv.ipfloc[: pfv.ngrp] == 3)[0]):
             # PF coil is radially outside the TF coil
             for j in stacked_pf_tf_rad:
-                for k in range(pfv.ncls[j]):
-                    pf.zcls[j, k] = pv.rminor * pfv.zref[j] * signn[k]
-                    # Coil radius follows TF coil curve for SC TF (D-shape)
-                    # otherwise stacked for resistive TF (rectangle-shape)
-                    if tfv.i_tf_sup != 1 or pfv.i_sup_pf_shape == 1:
-                        pf.rcls[j, k] = pf.rclsnorm
-                    else:
-                        pf.rcls[j, k] = math.sqrt(pf.rclsnorm**2 - pf.zcls[j, k] ** 2)
-                        try:
-                            assert pf.rcls[j, k] < np.inf
-                        except AssertionError:
-                            logger.exception(
-                                "Element of pf.rcls is inf. Kludging to 1e10."
-                            )
-                            pf.rcls[j, k] = 1e10
-        if any(general_pf := np.nonzero(pfv.ipfloc[:pfv.ngrp] == 4)[0]):
+                pf.zcls[j, : pfv.ncls[j]] = (
+                    pv.rminor * pfv.zref[j] * signn[: pfv.ncls[j]]
+                )
+                if tfv.i_tf_sup != 1 or pfv.i_sup_pf_shape == 1:
+                    pf.rcls[j, : pfv.ncls[j]] = pf.rclsnorm
+
+                else:
+                    pf.rcls[j, : pfv.ncls[j]] = np.sqrt(
+                        pf.rclsnorm**2 - pf.zcls[j, : pfv.ncls[j]] ** 2
+                    )
+                    if where_inf := np.nonzero(np.isinf(pf.rcls[j, : pfv.ncls[j]]))[0]:
+                        logger.exception("Element of pf.rcls is inf. Kludging to 1e10.")
+                        pf.rcls[j, where_inf] = 1e10
+
+        if any(general_pf := np.nonzero(pfv.ipfloc[: pfv.ngrp] == 4)[0]):
             for j in general_pf:
                 # PF coil is in general location
                 # See issue 1418
