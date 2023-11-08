@@ -214,15 +214,20 @@ class PFCoil:
                 # PF coil is in general location
                 # See issue 1418
                 # https://git.ccfe.ac.uk/process/process/-/issues/1418
-                pf.zcls[j, :pfv.ncls[j]] = pv.rminor * pfv.zref[j] * signn[:pfv.ncls[j]]
-                pf.rcls[j, :pfv.ncls[j]] = pv.rminor * pfv.rref[j] + pv.rmajor
+                pf.zcls[j, : pfv.ncls[j]] = (
+                    pv.rminor * pfv.zref[j] * signn[: pfv.ncls[j]]
+                )
+                pf.rcls[j, : pfv.ncls[j]] = pv.rminor * pfv.rref[j] + pv.rmajor
 
-        if any(error := np.nonzero((pfv.ipfloc[:pfv.ngrp] < 1) | (pfv.ipfloc[:pfv.ngrp] > 4))[0]):
+        if any(
+            error := np.nonzero(
+                (pfv.ipfloc[: pfv.ngrp] < 1) | (pfv.ipfloc[: pfv.ngrp] > 4)
+            )[0]
+        ):
             for j in error:
                 eh.idiags[0] = j
                 eh.idiags[1] = pfv.ipfloc[j]
                 eh.report_error(67)
-
 
         # Allocate current to the PF coils:
         # "Flux swing coils" participate in cancellation of the CS
