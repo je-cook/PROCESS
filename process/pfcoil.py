@@ -1753,15 +1753,12 @@ class PFCoil:
         pf.nef = pfv.nohc if bv.iohcl == 0 else (pfv.nohc - 1)
 
         for i in range(pf.nef):
-            for j in range(pf.nef - 1):
-                jj = j + 2 if j >= i else j + 1
+            jrng = np.arange(pf.nef - 1)
+            jj = np.where(jrng >= i, jrng + 2, jrng + 1)
+            zc[jrng] = pfv.zpf[jj - 1]
+            rc[jrng] = pfv.rpf[jj - 1]
 
-                zc[j] = pfv.zpf[jj - 1]
-                rc[j] = pfv.rpf[jj - 1]
-
-            rp = pfv.rpf[i]
-            zp = pfv.zpf[i]
-            xc, _br, _bz, _psi = bfield(rc, zc, cc, rp, zp)
+            xc, _br, _bz, _psi = bfield(rc, zc, cc, pfv.rpf[i], pfv.zpf[i])
             for k in range(pf.nef):
                 if k < i:
                     pfv.sxlg[i, k] = xc[k] * pfv.turns[k] * pfv.turns[i]
