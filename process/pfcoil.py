@@ -1744,14 +1744,10 @@ class PFCoil:
                 for ii in range(noh):
                     xohpf = xohpf + xc[ii]
 
-                for j in range(pfv.ncls[i]):
-                    ncoilj = ncoils + 1 - (j + 1)
-                    pfv.sxlg[ncoilj - 1, pfv.nohc - 1] = (
-                        xohpf * pfv.turns[ncoilj - 1] * pfv.turns[pfv.nohc - 1] / noh
-                    )
-                    pfv.sxlg[pfv.nohc - 1, ncoilj - 1] = pfv.sxlg[
-                        ncoilj - 1, pfv.nohc - 1
-                    ]
+                ncoilj = ncoils + 1 - (np.arange(pfv.ncls[i]) + 1)
+                pfv.sxlg[ncoilj - 1, pfv.nohc - 1] = pfv.sxlg[
+                    pfv.nohc - 1, ncoilj - 1
+                ] = (xohpf * pfv.turns[ncoilj - 1] * pfv.turns[pfv.nohc - 1] / noh)
 
         # PF coil - PF coil inductances
         pf.nef = pfv.nohc if bv.iohcl == 0 else (pfv.nohc - 1)
