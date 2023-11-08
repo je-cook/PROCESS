@@ -1175,7 +1175,12 @@ class PFCoil:
             # Allowable coil overall current density at EOF
             # (superconducting coils only)
 
-            (jcritwp, pfv.jstrandoh_eof, pfv.jscoh_eof, tmarg1,) = self.superconpf(
+            (
+                jcritwp,
+                pfv.jstrandoh_eof,
+                pfv.jscoh_eof,
+                tmarg1,
+            ) = self.superconpf(
                 pfv.bmaxoh,
                 pfv.vfohc,
                 pfv.fcuohsu,
@@ -1192,7 +1197,12 @@ class PFCoil:
 
             # Allowable coil overall current density at BOP
 
-            (jcritwp, pfv.jstrandoh_bop, pfv.jscoh_bop, tmarg2,) = self.superconpf(
+            (
+                jcritwp,
+                pfv.jstrandoh_bop,
+                pfv.jscoh_bop,
+                tmarg2,
+            ) = self.superconpf(
                 pfv.bmaxoh0,
                 pfv.vfohc,
                 pfv.fcuohsu,
