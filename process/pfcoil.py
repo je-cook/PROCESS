@@ -94,14 +94,14 @@ class PFCoil:
 
         # Total the number of PF coils in all groups, and check that none
         # exceeds the limit
-        if exceeds_limit := np.nonzero(pfv.ncls[:pfv.ngrp] > pfv.nclsmx)[0]:
+        if exceeds_limit := np.nonzero(pfv.ncls[: pfv.ngrp] > pfv.nclsmx)[0]:
             for i in exceeds_limit:
                 eh.idiags[0] = i
                 eh.idiags[1] = pfv.ncls[i]
                 eh.idiags[2] = pfv.nclsmx
                 eh.report_error(65)
 
-        pfv.nohc = np.sum(pfv.ncls[:pfv.ngrp], axis=0)
+        pfv.nohc = np.sum(pfv.ncls[: pfv.ngrp], axis=0)
 
         # Add one if an Central Solenoid is present, and make an extra group
         if bv.iohcl != 0:
@@ -145,10 +145,12 @@ class PFCoil:
                 eh.report_error(66)
 
             # Symmetric up/down Central Solenoid : Find (R,Z) and current of each filament at BOP
-            pf.rfxf[:2 * pfv.nfxfh] = pfv.rohc
-            pf.cfxf[:2 * pfv.nfxfh] = -ioheof / pf.nfxf * pfv.fcohbop
-            pf.zfxf[:pfv.nfxfh] = bv.hmax * pfv.ohhghf / pfv.nfxfh * ((np.arange(pfv.nfxfh) + 1) - 0.5e0)
-            pf.zfxf[pfv.nfxfh: 2*pfv.nfxfh] = -pf.zfxf[:pfv.nfxfh]
+            pf.rfxf[: 2 * pfv.nfxfh] = pfv.rohc
+            pf.cfxf[: 2 * pfv.nfxfh] = -ioheof / pf.nfxf * pfv.fcohbop
+            pf.zfxf[: pfv.nfxfh] = (
+                bv.hmax * pfv.ohhghf / pfv.nfxfh * ((np.arange(pfv.nfxfh) + 1) - 0.5e0)
+            )
+            pf.zfxf[pfv.nfxfh : 2 * pfv.nfxfh] = -pf.zfxf[: pfv.nfxfh]
 
         # Scale PF coil locations
         signn[0] = 1.0e0
@@ -158,7 +160,7 @@ class PFCoil:
         # Place the PF coils:
 
         # N.B. Problems here if k=ncls(group) is greater than 2.
-        if any(stacked_pf_cs := np.nonzero(pfv.ipfloc[:pfv.ngrp] == 1)[0]):
+        if any(stacked_pf_cs := np.nonzero(pfv.ipfloc[: pfv.ngrp] == 1)[0]):
             # PF coil is stacked on top of the Central Solenoid
             pf.rcls[stacked_pf_cs, pfv.ncls[stacked_pf_cs]] = pfv.rohc + pfv.rpf1
 
@@ -246,7 +248,7 @@ class PFCoil:
             brin[:npts] = 0.0e0
             bzin[:npts] = 0.0e0
 
-                # Calculate currents in coils to produce the given field
+            # Calculate currents in coils to produce the given field
             pf.ssq0, pf.ccl0 = self.efc(
                 npts,
                 rpts,
@@ -717,9 +719,9 @@ class PFCoil:
             self.ohcalc()
 
         # Summation of weights and current
-        pfv.whtpf = np.sum(pfv.wtc[:pfv.nohc], axis=0)
-        pfv.whtpfs = np.sum(pfv.wts[:pfv.nohc], axis=0)
-        pfv.ricpf = np.sum(abs(pfv.ric[:pfv.nohc]), axis=0)
+        pfv.whtpf = np.sum(pfv.wtc[: pfv.nohc], axis=0)
+        pfv.whtpfs = np.sum(pfv.wts[: pfv.nohc], axis=0)
+        pfv.ricpf = np.sum(abs(pfv.ric[: pfv.nohc]), axis=0)
 
         # Plasma size and shape
         pfv.zh[pfv.nohc] = pv.rminor * pv.kappa
@@ -730,9 +732,12 @@ class PFCoil:
 
         # Generate coil currents as a function of time using
         # user-provided waveforms etc. (cptdin, fcohbop, fcohbof)
-        pfv.cpt[:pfv.ncirt - 1, :6] = pfv.waves[:pfv.ncirt - 1, :6] * np.copysign(
-                pfv.cptdin[:pfv.ncirt - 1], pfv.ric[:pfv.ncirt - 1]
-            )[:, None]
+        pfv.cpt[: pfv.ncirt - 1, :6] = (
+            pfv.waves[: pfv.ncirt - 1, :6]
+            * np.copysign(pfv.cptdin[: pfv.ncirt - 1], pfv.ric[: pfv.ncirt - 1])[
+                :, None
+            ]
+        )
 
         # Plasma wave form
         pfv.cpt[pfv.ncirt - 1, 0] = 0.0e0
@@ -1424,9 +1429,9 @@ class PFCoil:
         else:
             pf.nef = pfv.ncirt - 2
 
-        pf.vsdum[:pf.nef, 0] = pfv.sxlg[pfv.ncirt - 1, :pf.nef] * pfv.cpt[:pf.nef, 1]
-        pf.vsdum[:pf.nef, 1] = pfv.sxlg[pfv.ncirt - 1, :pf.nef] * pfv.cpt[:pf.nef, 2]
-        pfv.vsefsu = np.sum(pf.vsdum[:pf.nef, 1] - pf.vsdum[:pf.nef, 0], axis=0)
+        pf.vsdum[: pf.nef, 0] = pfv.sxlg[pfv.ncirt - 1, : pf.nef] * pfv.cpt[: pf.nef, 1]
+        pf.vsdum[: pf.nef, 1] = pfv.sxlg[pfv.ncirt - 1, : pf.nef] * pfv.cpt[: pf.nef, 2]
+        pfv.vsefsu = np.sum(pf.vsdum[: pf.nef, 1] - pf.vsdum[: pf.nef, 0], axis=0)
 
         # Central Solenoid startup volt-seconds
         if bv.iohcl != 0:
@@ -1449,8 +1454,8 @@ class PFCoil:
             pfv.vsohbn = pf.vsdum[pfv.nohc - 1, 2] - pf.vsdum[pfv.nohc - 1, 1]
 
         # PF volt-seconds during burn
-        pf.vsdum[:pf.nef, 2] = pfv.sxlg[pfv.ncirt - 1, :pf.nef] * pfv.cpt[:pf.nef, 4]
-        pfv.vsefbn = np.sum(pf.vsdum[:pf.nef, 2] - pf.vsdum[:pf.nef, 1], axis=0)
+        pf.vsdum[: pf.nef, 2] = pfv.sxlg[pfv.ncirt - 1, : pf.nef] * pfv.cpt[: pf.nef, 4]
+        pfv.vsefbn = np.sum(pf.vsdum[: pf.nef, 2] - pf.vsdum[: pf.nef, 1], axis=0)
 
         pfv.vsbn = pfv.vsohbn + pfv.vsefbn
 
@@ -1625,7 +1630,7 @@ class PFCoil:
         # array allocation with -ve bound previously coerced to 0
         noh = max(0, min(noh, nohmax))
 
-        roh, zoh = np.zeros((2,noh))
+        roh, zoh = np.zeros((2, noh))
 
         if bv.iohcl != 0:
             roh[:] = pfv.rohc
@@ -1688,12 +1693,11 @@ class PFCoil:
 
         # PF coil / plasma mutual inductances
         ncoils = 0
-
         for i in range(pfv.ngrp):
             ncoils = ncoils + pfv.ncls[i]
-            rp = pfv.rpf[ncoils - 1]
-            zp = pfv.zpf[ncoils - 1]
-            xc, _br, _bz, _psi = bfield(rc, zc, cc, rp, zp)
+            xc, _br, _bz, _psi = bfield(
+                rc, zc, cc, pfv.rpf[ncoils - 1], pfv.zpf[ncoils - 1]
+            )
             xpfpl = np.sum(xc[:nplas], axis=0)
 
             for j in range(pfv.ncls[i]):
@@ -1722,9 +1726,9 @@ class PFCoil:
             for i in range(pfv.ngrp):
                 xohpf = 0.0
                 ncoils = ncoils + pfv.ncls[i]
-                rp = pfv.rpf[ncoils - 1]
-                zp = pfv.zpf[ncoils - 1]
-                xc, _br, _bz, _psi = bfield(rc, zc, cc, rp, zp)
+                xc, _br, _bz, _psi = bfield(
+                    rc, zc, cc, pfv.rpf[ncoils - 1], pfv.zpf[ncoils - 1]
+                )
                 for ii in range(noh):
                     xohpf = xohpf + xc[ii]
 
@@ -1738,10 +1742,7 @@ class PFCoil:
                     ]
 
         # PF coil - PF coil inductances
-        if bv.iohcl == 0:
-            pf.nef = pfv.nohc
-        else:
-            pf.nef = pfv.nohc - 1
+        pf.nef = pfv.nohc if bv.iohcl == 0 else (pfv.nohc - 1)
 
         for i in range(pf.nef):
             for j in range(pf.nef - 1):
@@ -2634,8 +2635,8 @@ class PFCoil:
         AEA FUS 251: A User's Guide to the PROCESS Systems Code
         """
         # nplas + 1
-        pfv.waves[:pfv.nohc, [1,2,3,4]] = 1.0e0
-        pfv.waves[:pfv.nohc, [0, 5]] = 0.0e0
+        pfv.waves[: pfv.nohc, [1, 2, 3, 4]] = 1.0e0
+        pfv.waves[: pfv.nohc, [0, 5]] = 0.0e0
 
         for ic in range(pfv.nohc):
             # Find where the peak current occurs
@@ -2658,10 +2659,10 @@ class PFCoil:
                 pfv.ric[ic] = pfv.curpfb[ic]
 
         # Set normalized current waveforms
-        pfv.waves[:pfv.nohc, 1] = pfv.curpfs[:pfv.nohc] / pfv.ric[:pfv.nohc]
-        pfv.waves[:pfv.nohc, 2] = pfv.curpff[:pfv.nohc] / pfv.ric[:pfv.nohc]
-        pfv.waves[:pfv.nohc, 3] = pfv.curpff[:pfv.nohc] / pfv.ric[:pfv.nohc]
-        pfv.waves[:pfv.nohc, 4] = pfv.curpfb[:pfv.nohc] / pfv.ric[:pfv.nohc]
+        pfv.waves[: pfv.nohc, 1] = pfv.curpfs[: pfv.nohc] / pfv.ric[: pfv.nohc]
+        pfv.waves[: pfv.nohc, 2] = pfv.curpff[: pfv.nohc] / pfv.ric[: pfv.nohc]
+        pfv.waves[: pfv.nohc, 3] = pfv.curpff[: pfv.nohc] / pfv.ric[: pfv.nohc]
+        pfv.waves[: pfv.nohc, 4] = pfv.curpfb[: pfv.nohc] / pfv.ric[: pfv.nohc]
 
     def superconpf(
         self, bmax, fhe, fcu, jwp, isumat, fhts, strain, thelium, bcritsc, tcritsc
@@ -2729,8 +2730,7 @@ class PFCoil:
             if ml.variable_error(jcrit0):  # superconductors.jcrit_nbti has failed.
                 print(f"superconductors.jcrit_nbti: {bmax=} {temperature=} {jcrit0=}")
 
-            deltaj_nbti = jcrit0 - jsc
-            return deltaj_nbti
+            return jcrit0 - jsc
 
         def deltaj_wst(temperature):
             """Critical current density and current density difference for WST Nb3Sn.
@@ -2744,8 +2744,7 @@ class PFCoil:
             if ml.variable_error(jcrit0):  # superconductors.wstsc has failed.
                 print(f"deltaj_wst: {bmax=} {temperature=} {jcrit0=}")
 
-            deltaj_wst = jcrit0 - jsc
-            return deltaj_wst
+            return jcrit0 - jsc
 
         def deltaj_gl_nbti(temperature):
             """Critical current density and current density difference in GL NbTi.
