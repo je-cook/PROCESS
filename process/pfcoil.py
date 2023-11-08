@@ -1363,10 +1363,8 @@ class PFCoil:
         if (bv.iohcl != 0) and (i == pfv.nohc):
             return bri, bro, bzi, bzo
 
-        bpfin = math.sqrt(bri**2 + bzi**2)
-        bpfout = math.sqrt(bro**2 + bzo**2)
-        pfv.bpf[i - 1: i - 1 + pfv.ncls[ii - 1]] = bpfin
-        pf.bpf2[i - 1: i - 1 + pfv.ncls[ii - 1]] = bpfout
+        pfv.bpf[i - 1 : i - 1 + pfv.ncls[ii - 1]] = np.linalg.norm([bri, bzi], axis=0)
+        pf.bpf2[i - 1 : i - 1 + pfv.ncls[ii - 1]] = np.linalg.norm([bro, bzo], axis=0)
 
         return bri, bro, bzi, bzo
 
