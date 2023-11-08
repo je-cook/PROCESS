@@ -1716,14 +1716,10 @@ class PFCoil:
             )
             xpfpl = np.sum(xc[:nplas], axis=0)
 
-            for j in range(pfv.ncls[i]):
-                ncoilj = ncoils + 1 - (j + 1)
-                pfv.sxlg[ncoilj - 1, pfv.ncirt - 1] = (
-                    xpfpl / nplas * pfv.turns[ncoilj - 1]
-                )
-                pfv.sxlg[pfv.ncirt - 1, ncoilj - 1] = pfv.sxlg[
-                    ncoilj - 1, pfv.ncirt - 1
-                ]
+            ncoilj = ncoils + 1 - (np.arange(pfv.ncls[i]) + 1)
+            pfv.sxlg[ncoilj - 1, pfv.ncirt - 1] = pfv.sxlg[
+                pfv.ncirt - 1, ncoilj - 1
+            ] = (xpfpl / nplas * pfv.turns[ncoilj - 1])
 
         if bv.iohcl != 0:
             # Central Solenoid self inductance
