@@ -26,3 +26,87 @@ repos:
     hooks:
       - id: nbstripout
         args: [--extra-keys=metadata.language_info.version]
+
+  # Tools without dedicated pre-commit mirrors can use isolated
+  # pre-commit-managed Python environments.
+  - repo: local
+    hooks:
+      - id: lizard
+        name: Lizard complexity
+        entry: lizard
+        language: python
+        additional_dependencies:
+          - lizard==1.19.0
+        types: [python]
+        args:
+          # Warn when CCN > 15.
+          - --CCN
+          - "15"
+
+          # Warn when a function has more than 7 parameters.
+          - --arguments
+          - "7"
+
+          # Warn when a function is longer than 60 NLOC.
+          - --length
+          - "60"
+
+          # Return a failure when warnings are found.
+          - --warnings_only
+
+      - id: radon-cc
+        name: Radon cyclomatic complexity
+        entry: radon cc
+        language: python
+        additional_dependencies:
+          - radon==6.0.1
+        types: [python]
+        args:
+          # Show complexity values.
+          - --show-complexity
+
+          # Show only C-ranked or worse blocks.
+          - --min
+          - C
+
+          # Fail if C-ranked or worse blocks are found.
+          - --total-average
+          - --average
+
+      - id: radon-mi
+        name: Radon maintainability index
+        entry: radon mi
+        language: python
+        additional_dependencies:
+          - radon==6.0.1
+        types: [python]
+        args:
+          - --show
+
+          # Show only B-ranked or worse files.
+          - --min
+          - B
+
+      - id: vulture
+        name: Vulture dead-code check
+        entry: vulture
+        language: python
+        additional_dependencies:
+          - vulture
+        types: [python]
+        args:
+          # Start conservatively to avoid dynamic-Python false positives.
+          - --min-confidence
+          - "100"
+
+          # Put the largest dead-code candidates first.
+          - --sort-by-size
+
+      - id: import-linter
+        name: Import Linter architecture contracts
+        entry: lint-imports
+        language: python
+        additional_dependencies:
+          - import-linter
+        pass_filenames: false
+        always_run: true
